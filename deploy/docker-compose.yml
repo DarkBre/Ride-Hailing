@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  identity-service:
+    build:
+      context: ../src/identity-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - NODE_ENV=production
+      - JWT_SECRET=prod-jwt-secret-key-ds03-change-me
+      - INTERNAL_KEY=prod-internal-key-ds03
+    volumes:
+      - identity-data:/app/data
+
+  trip-service:
+    build:
+      context: ../src/trip-service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+      - NODE_ENV=production
+      - JWT_SECRET=prod-jwt-secret-key-ds03-change-me
+      - INTERNAL_KEY=prod-internal-key-ds03
+      - URL_BROKER=http://broker-service:4000
+    volumes:
+      - trip-data:/app/data
+
+volumes:
+  identity-data:
+  trip-data:

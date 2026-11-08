@@ -12,7 +12,7 @@ const { createRoutes } = require('./routes');
 function createTripService(options = {}) {
   const port = options.port || config.PORT;
   const db = initDatabase(options.dbPath || null);
-  const outboxManager = new OutboxManager(db, { onPublish: options.onPublish || null });
+  const outboxManager = new OutboxManager(db, { onPublish: options.onPublish });
   const sagaCoordinator = new SagaCoordinator(db, outboxManager);
   const routes = createRoutes(db, sagaCoordinator, outboxManager);
 

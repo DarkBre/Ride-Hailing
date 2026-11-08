@@ -404,7 +404,7 @@ async function runTests() {
       assert.strictEqual(payload.driver_id, 'driver_late_999');
     });
 
-    await test('Saga 7: Stale payment.event.hold_success đến sau khi chuyến xe đã CANCELLED -> Bỏ qua an toàn, không overwrite CONFIRMED', async () => {
+    await test('Saga 7: Stale payment.event.hold_success đến sau khi chuyến đã CANCELLED -> Kích hoạt bù trừ giải phóng tiền (payment.event.refund_requested)', async () => {
       // failedTripId đã bị CANCELLED ở Kịch bản 2
       const resLateHold = await makeRequest({
         method: 'POST',
@@ -419,11 +419,117 @@ async function runTests() {
         },
       });
       assert.strictEqual(resLateHold.status, 200);
-      assert.strictEqual(resLateHold.body.data.action, 'STALE_EVENT_IGNORED_TRIP_CANCELLED');
+      assert.strictEqual(resLateHold.body.data.action, 'STALE_EVENT_COMPENSATED_PAYMENT_RELEASED');
 
-      // Chuyến xe vẫn là CANCELLED
+      // 1. Chuyến xe vẫn giữ nguyên trạng thái CANCELLED, tuyệt đối không bị ghi đè CONFIRMED
       const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', failedTripId);
       assert.strictEqual(trip.status, 'CANCELLED');
+
+      // 2. Saga instance chuyển sang COMPENSATED với bước giải phóng tiền
+      const saga = service.sagaCoordinator.getSagaStatus(failedTripId);
+      assert.strictEqual(saga.status, SAGA_STATUS.COMPENSATED);
+      assert.strictEqual(saga.current_step, 'COMPENSATION_RELEASE_PAYMENT');
+
+      // 3. Outbox bắt buộc phải sinh ra sự kiện payment.event.refund_requested để giải phóng tiền đã giữ
+      const refundEvt = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.refund_requested';",
+        failedTripId
+      );
+      assert(refundEvt, 'Outbox phải chứa sự kiện bù trừ payment.event.refund_requested');
+      const refundPayload = JSON.parse(refundEvt.payload);
+      assert.strictEqual(refundPayload.trip_id, failedTripId);
+      assert(refundPayload.amount > 0, 'Số tiền hoàn lại phải > 0');
+    });
+
+    await test('Saga 7.1: Duplicate stale hold_success -> Phát hiện trùng lặp và không nhân bản lệnh giải phóng tiền', async () => {
+      const resDupHold = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_late_hold_success_007', // Gửi lại đúng event_id đã xử lý ở test 7
+          event_type: 'payment.event.hold_success',
+          payload: {
+            trip_id: failedTripId,
+          },
+        },
+      });
+      assert.strictEqual(resDupHold.status, 200);
+      assert.strictEqual(resDupHold.body.data.duplicate, true);
+      assert.strictEqual(resDupHold.body.data.action, 'IGNORED');
+
+      // Đảm bảo không nhân bản thêm sự kiện refund trong Outbox
+      const refundEvents = service.db.all(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.refund_requested';",
+        failedTripId
+      );
+      assert.strictEqual(refundEvents.length, 1, 'Chỉ được phép có đúng 1 sự kiện bù trừ refund trong Outbox');
+    });
+
+    await test('Saga 7.2: Race condition cả driver_matched lẫn hold_success đều đến muộn -> Giải phóng cả tài xế lẫn tiền cước', async () => {
+      // Tạo chuyến xe mới rồi khách lập tức huỷ khi đang REQUESTED
+      const resCreate = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        body: {
+          pickup_latitude: 21.03,
+          pickup_longitude: 105.84,
+          pickup_address: 'Doi Can',
+          dropoff_latitude: 21.05,
+          dropoff_longitude: 105.80,
+          dropoff_address: 'Xuan Thuy',
+        },
+      });
+      const raceTripId = resCreate.body.data.id;
+
+      // Khách huỷ chuyến
+      await makeRequest({
+        method: 'POST',
+        path: `/trips/${raceTripId}/cancel`,
+        body: { reason: 'Khách không muốn đi nữa' },
+      });
+
+      // 1. driver_matched đến muộn
+      await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_race_match_001',
+          event_type: 'trip.event.driver_matched',
+          payload: { trip_id: raceTripId, driver_id: 'driver_race_01', estimated_fare: 45000 },
+        },
+      });
+
+      // 2. hold_success cũng đến muộn
+      await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_race_hold_001',
+          event_type: 'payment.event.hold_success',
+          payload: { trip_id: raceTripId },
+        },
+      });
+
+      // Kiểm tra: chuyến xe vẫn là CANCELLED
+      const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', raceTripId);
+      assert.strictEqual(trip.status, 'CANCELLED');
+
+      // Kiểm tra Outbox: CẢ 2 sự kiện bù trừ đều được phát sinh
+      const releaseDriver = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'trip.event.release_driver';",
+        raceTripId
+      );
+      const releasePayment = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.refund_requested';",
+        raceTripId
+      );
+
+      assert(releaseDriver, 'Phải có sự kiện bù trừ giải phóng tài xế');
+      assert(releasePayment, 'Phải có sự kiện bù trừ hoàn tiền');
+      assert.strictEqual(JSON.parse(releaseDriver.payload).driver_id, 'driver_race_01');
     });
 
     // -------------------------------------------------------------
@@ -456,6 +562,32 @@ async function runTests() {
       });
       assert.strictEqual(resWrongKey.status, 401);
       assert.strictEqual(resWrongKey.body.error.code, 'UNAUTHORIZED_INTERNAL');
+    });
+
+    // -------------------------------------------------------------
+    // KỊCH BẢN 9: PHỤC HỒI COMPENSATION KHI CRASH / RESTART
+    // -------------------------------------------------------------
+    await test('Saga 9: Khởi động lại service sau khi ghi bù trừ refund vào Outbox -> Dữ liệu bù trừ được phục hồi nguyên vẹn từ SQLite', async () => {
+      // Dừng tiến trình hiện tại
+      await service.stop();
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Khởi động lại service trỏ vào cùng cơ sở dữ liệu
+      service = createTripService({ port: TEST_PORT, dbPath: TEST_DB });
+      await service.start();
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Kiểm tra sự kiện refund trong Outbox vẫn tồn tại nguyên vẹn
+      const refundEvt = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.refund_requested';",
+        failedTripId
+      );
+      assert(refundEvt, 'Sự kiện bù trừ payment.event.refund_requested phải còn nguyên trên đĩa SQLite');
+      assert.strictEqual(refundEvt.status, 'PENDING');
+
+      // Saga instance vẫn là COMPENSATED
+      const saga = service.sagaCoordinator.getSagaStatus(failedTripId);
+      assert.strictEqual(saga.status, SAGA_STATUS.COMPENSATED);
     });
 
   } finally {

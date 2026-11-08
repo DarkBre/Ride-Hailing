@@ -133,7 +133,7 @@ d:\btl phân tán/
 ## 5. Hướng Dẫn Cài Đặt & Khởi Chạy (Quickstart)
 
 ### 5.1. Yêu cầu môi trường
-* Node.js v22.5.0+ LTS (Dự án sử dụng trực tiếp `node:sqlite` native, không cần cài `npm install`).
+* Node.js v22.13.0+ LTS (Dự án sử dụng trực tiếp `node:sqlite` native không cần cờ experimental, zero external dependencies).
 * RAM tối thiểu: 2 GB rảnh.
 
 ### 5.2. Kiểm tra toàn vẹn codebase
