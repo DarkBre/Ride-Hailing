@@ -79,11 +79,22 @@ function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
 /**
  * Xác thực JWT token
  */
-function verifyToken(token) {
+function verifyToken(token, db = null) {
   if (!token || typeof token !== 'string') return null;
 
-  // Kiểm tra blacklist
+  // 1. Kiểm tra blacklist trong bộ nhớ
   if (tokenBlacklist.has(token)) return null;
+
+  // 2. Kiểm tra blacklist bền vững trong SQLite (nếu có DB)
+  if (db) {
+    try {
+      const row = db.get('SELECT token FROM token_blacklist WHERE token = ?;', token);
+      if (row) {
+        tokenBlacklist.add(token);
+        return null;
+      }
+    } catch (_) {}
+  }
 
   const parts = token.split('.');
   if (parts.length !== 3) return null;
@@ -123,11 +134,29 @@ function verifyToken(token) {
 }
 
 /**
- * Đưa token vào danh sách đen (khi đăng xuất)
+ * Đưa token vào danh sách đen (khi đăng xuất), lưu bền vững vào SQLite
  */
-function revokeToken(token) {
+function revokeToken(token, db = null) {
   if (token && typeof token === 'string') {
     tokenBlacklist.add(token);
+    if (db) {
+      try {
+        let exp = null;
+        try {
+          const parts = token.split('.');
+          if (parts.length === 3) {
+            const p = JSON.parse(base64UrlDecode(parts[1]));
+            exp = p.exp || null;
+          }
+        } catch (_) {}
+
+        db.run(
+          'INSERT OR IGNORE INTO token_blacklist (token, expires_at) VALUES (?, ?);',
+          token,
+          exp
+        );
+      } catch (_) {}
+    }
     return true;
   }
   return false;

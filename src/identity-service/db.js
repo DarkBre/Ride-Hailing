@@ -35,6 +35,14 @@ function initDatabase(customDbPath = null) {
     );
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+    -- Bảng lưu trữ token đã thu hồi (Persistent Blacklist)
+    CREATE TABLE IF NOT EXISTS token_blacklist (
+      token TEXT PRIMARY KEY,
+      revoked_at TEXT DEFAULT (datetime('now')),
+      expires_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist(expires_at);
   `);
 
   return {

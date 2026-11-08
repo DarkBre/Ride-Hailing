@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const auth = require('./auth');
+const config = require('./config');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -65,23 +66,33 @@ function createRoutes(db) {
           throw err;
         }
 
-        // 2.3. Băm mật khẩu scrypt + salt
+        // 2.3. Băm mật khẩu scrypt + salt và ghi DB an toàn
         const passwordHash = auth.hashPassword(password);
         const userId = crypto.randomUUID();
         const now = new Date().toISOString();
 
-        db.run(
-          `INSERT INTO users (id, email, password_hash, name, phone, role, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-          userId,
-          email.trim().toLowerCase(),
-          passwordHash,
-          name.trim(),
-          phone ? String(phone).trim() : null,
-          normalizedRole,
-          now,
-          now
-        );
+        try {
+          db.run(
+            `INSERT INTO users (id, email, password_hash, name, phone, role, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+            userId,
+            email.trim().toLowerCase(),
+            passwordHash,
+            name.trim(),
+            phone ? String(phone).trim() : null,
+            normalizedRole,
+            now,
+            now
+          );
+        } catch (err) {
+          if (err.message && err.message.includes('UNIQUE')) {
+            const conflictErr = new Error('Email đã được đăng ký trong hệ thống');
+            conflictErr.status = 409;
+            conflictErr.code = 'EMAIL_ALREADY_EXISTS';
+            throw conflictErr;
+          }
+          throw err;
+        }
 
         return {
           id: userId,
@@ -153,7 +164,7 @@ function createRoutes(db) {
       handler: async ({ headers }) => {
         const authHeader = headers['authorization'] || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-        const decoded = auth.verifyToken(token);
+        const decoded = auth.verifyToken(token, db);
 
         if (!decoded) {
           const err = new Error('Token xác thực không hợp lệ hoặc đã hết hạn');
@@ -183,20 +194,29 @@ function createRoutes(db) {
         const authHeader = headers['authorization'] || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
         if (token) {
-          auth.revokeToken(token);
+          auth.revokeToken(token, db);
         }
         return { message: 'Đăng xuất thành công' };
       },
     })),
 
     // 6. API Nội bộ: Xác thực nhanh token cho API Gateway hoặc Service khác
+    // Được bảo vệ nghiêm ngặt bằng X-Internal-Key (ST-01, Section 5.5)
     {
       method: 'POST',
       path: '/internal/verify-token',
       status: 200,
-      handler: async ({ body }) => {
+      handler: async ({ headers, body }) => {
+        const internalKey = headers['x-internal-key'];
+        if (!internalKey || internalKey !== config.INTERNAL_KEY) {
+          const err = new Error('Yêu cầu x-internal-key hợp lệ để truy cập endpoint nội bộ');
+          err.status = 401;
+          err.code = 'UNAUTHORIZED_INTERNAL';
+          throw err;
+        }
+
         const { token } = body || {};
-        const decoded = auth.verifyToken(token);
+        const decoded = auth.verifyToken(token, db);
         if (!decoded) {
           return { valid: false, user: null };
         }

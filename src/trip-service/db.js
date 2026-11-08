@@ -40,6 +40,7 @@ function initDatabase(customDbPath = null) {
         CHECK (status IN ('REQUESTED', 'MATCHING', 'DRIVER_ASSIGNED', 'CONFIRMED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
       cancellation_reason TEXT,
       idempotency_key TEXT UNIQUE,
+      idempotency_payload_hash TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
