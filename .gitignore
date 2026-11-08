@@ -1,0 +1,28 @@
+# Environment variables & secrets
+.env
+.env.local
+*.env
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Logs & Temporary files
+logs/
+*.log
+tmp/
+temp/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Runtime data & SQLite databases
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Reference folders (Bản mẫu tham khảo, không đưa vào git)
+DS03 Build a Ride-Hailing/
+*.zip
