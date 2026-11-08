@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const { createTripService } = require('../src/trip-service');
 const { PricingEngine } = require('../src/trip-service/pricing-engine');
 const { haversineDistanceKm } = require('../src/trip-service/geo');
+const { signToken } = require('../src/identity-service/auth');
 
 const TEST_PORT = 8903;
 const TEST_DB = path.join(__dirname, '..', 'data', 'test_trip_db.sqlite');
@@ -326,6 +327,134 @@ async function runTests() {
       // Kiểm tra trạng thái đã chuyển thành PUBLISHED
       const pendingEvents = service.db.all("SELECT * FROM outbox_events WHERE status = 'PENDING';");
       assert.strictEqual(pendingEvents.length, 0, 'Toàn bộ sự kiện phải chuyển sang PUBLISHED');
+    });
+
+    // 8. Section 6.1: Xác thực chủ sở hữu và RBAC (Identity & Authorization)
+    await test('Section 6.1: Tài xế (DRIVER) không được phép tạo cuốc xe (HTTP 403)', async () => {
+      const driverToken = signToken({ userId: 'driver_test_99', role: 'DRIVER' });
+      const res = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: { Authorization: `Bearer ${driverToken}` },
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'Diem Don',
+          dropoff_latitude: 21.05,
+          dropoff_longitude: 105.82,
+          dropoff_address: 'Diem Den',
+        },
+      });
+      assert.strictEqual(res.status, 403);
+      assert.strictEqual(res.body.error.code, 'FORBIDDEN');
+    });
+
+    await test('Section 6.1: Passenger B không thể xem cuốc xe của Passenger A (HTTP 403)', async () => {
+      const tokenA = signToken({ userId: 'passenger_A', role: 'PASSENGER' });
+      const tokenB = signToken({ userId: 'passenger_B', role: 'PASSENGER' });
+
+      // Passenger A tạo chuyến
+      const resA = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: { Authorization: `Bearer ${tokenA}` },
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'Nha A',
+          dropoff_latitude: 21.05,
+          dropoff_longitude: 105.82,
+          dropoff_address: 'Cong Ty A',
+        },
+      });
+      assert.strictEqual(resA.status, 201);
+      const tripIdA = resA.body.data.id;
+
+      // Passenger B cố tình đọc chuyến của A
+      const resB = await makeRequest({
+        method: 'GET',
+        path: `/trips/${tripIdA}`,
+        headers: { Authorization: `Bearer ${tokenB}` },
+      });
+      assert.strictEqual(resB.status, 403);
+      assert.strictEqual(resB.body.error.code, 'FORBIDDEN');
+
+      // Passenger A đọc chuyến của mình -> thành công 200
+      const resA_Read = await makeRequest({
+        method: 'GET',
+        path: `/trips/${tripIdA}`,
+        headers: { Authorization: `Bearer ${tokenA}` },
+      });
+      assert.strictEqual(resA_Read.status, 200);
+      assert.strictEqual(resA_Read.body.data.passenger_id, 'passenger_A');
+    });
+
+    await test('Section 6.1: Driver Y không được phép nhận chuyến xe đã gán cho Driver X (HTTP 403)', async () => {
+      // Giả lập chuyến đã gán driver_X
+      const tripAssigned = service.db.get("SELECT id FROM trips WHERE status = 'REQUESTED' LIMIT 1;");
+      service.db.run(
+        "UPDATE trips SET status = 'DRIVER_ASSIGNED', driver_id = 'driver_X' WHERE id = ?;",
+        tripAssigned.id
+      );
+
+      const tokenDriverY = signToken({ userId: 'driver_Y', role: 'DRIVER' });
+      const resY = await makeRequest({
+        method: 'POST',
+        path: `/trips/${tripAssigned.id}/accept`,
+        headers: { Authorization: `Bearer ${tokenDriverY}` },
+      });
+      assert.strictEqual(resY.status, 403);
+      assert.strictEqual(resY.body.error.code, 'FORBIDDEN');
+    });
+
+    // 9. Section 6.3: Cùng Idempotency-Key nhưng khác payload bị chặn (HTTP 409 Conflict)
+    await test('Section 6.3: Cùng Idempotency-Key nhưng khác payload trả về HTTP 409 Conflict', async () => {
+      const conflictKey = 'idemp_key_conflict_999';
+      const payloadA = {
+        pickup_latitude: 21.02,
+        pickup_longitude: 105.85,
+        pickup_address: 'Dia Chi A',
+        dropoff_latitude: 21.05,
+        dropoff_longitude: 105.82,
+        dropoff_address: 'Dia Chi Den',
+      };
+      const payloadB = {
+        pickup_latitude: 21.02,
+        pickup_longitude: 105.85,
+        pickup_address: 'Dia Chi B KHAC HOAN TOAN',
+        dropoff_latitude: 21.08,
+        dropoff_longitude: 105.89,
+        dropoff_address: 'Dia Chi Den Khac',
+      };
+
+      const res1 = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: { 'idempotency-key': conflictKey },
+        body: payloadA,
+      });
+      assert.strictEqual(res1.status, 201);
+
+      // Gửi lại cùng key nhưng payload B khác biệt
+      const res2 = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: { 'idempotency-key': conflictKey },
+        body: payloadB,
+      });
+      assert.strictEqual(res2.status, 409);
+      assert.strictEqual(res2.body.error.code, 'IDEMPOTENCY_PAYLOAD_MISMATCH');
+    });
+
+    // 10. Webhook /internal/events yêu cầu X-Internal-Key
+    await test('Section 5.5: Webhook /internal/events chặn request thiếu X-Internal-Key (HTTP 401)', async () => {
+      const res = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        body: { event_type: 'trip.event.created', payload: {} },
+      });
+      assert.strictEqual(res.status, 401);
+      assert.strictEqual(res.body.error.code, 'UNAUTHORIZED_INTERNAL');
     });
 
   } finally {

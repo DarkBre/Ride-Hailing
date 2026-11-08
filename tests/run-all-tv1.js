@@ -26,12 +26,11 @@ async function main() {
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log('\n' + '='.repeat(70));
-    console.log(`✅ TOÀN BỘ 38/38 BÀI TEST CỦA THÀNH VIÊN 1 ĐÃ VƯỢT QUA 100% (${elapsed}s)!`);
-    console.log('   - FT-01, FT-02: Đăng ký, đăng nhập & cấp phát JWT (Identity Service)');
-    console.log('   - FT-05, FT-08: Tạo cuốc xe, vòng đời & hoàn tất (Trip Service)');
-    console.log('   - ST-01, ST-02: RBAC, bảo vệ token, validate input & SQL injection');
+    console.log(`✅ TOÀN BỘ 48/48 BÀI TEST CỦA THÀNH VIÊN 1 ĐÃ VƯỢT QUA 100% (${elapsed}s)!`);
+    console.log('   - Identity Tests (18/18): FT-01, FT-02, Persistent Token Blacklist, Fail-fast Secret, Race Condition');
+    console.log('   - Trip Tests (19/19): FT-05, FT-08, ST-01 Ownership/RBAC, ST-02 Validation, Idempotency Mismatch Detection');
+    console.log('   - Saga Tests (11/11): Happy Path, Payment Compensation, Deduplication, Restart Recovery, Stale Protection, Internal Security');
     console.log('   - Dynamic Pricing: Haversine distance, surge multiplier capping [1.0, 2.5]');
-    console.log('   - Saga Coordinator: Happy Path, Compensation & Event Deduplication');
     console.log('   - Transactional Outbox: Đảm bảo At-least-once delivery');
     console.log('='.repeat(70));
     process.exit(0);

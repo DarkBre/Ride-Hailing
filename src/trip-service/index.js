@@ -153,8 +153,15 @@ function createTripService(options = {}) {
     stop() {
       return new Promise((resolve) => {
         outboxManager.stopWorker();
-        db.close();
-        server.close(resolve);
+        if (typeof server.closeAllConnections === 'function') {
+          server.closeAllConnections();
+        }
+        server.close(() => {
+          try {
+            db.close();
+          } catch (_) {}
+          resolve();
+        });
       });
     },
   };

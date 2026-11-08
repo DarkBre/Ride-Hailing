@@ -110,9 +110,28 @@ class SagaCoordinator {
       throw new Error(`Không tìm thấy Saga cho chuyến đi ${tripId}`);
     }
 
-    // Không xử lý nếu Saga đã ở trạng thái kết thúc hoặc đang bù trừ
-    if ([SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
-      return { action: 'SKIPPED_DUE_TO_TERMINAL_STATE' };
+    const trip = this.db.get('SELECT * FROM trips WHERE id = ?;', tripId);
+    if (!trip) {
+      throw new Error(`Không tìm thấy chuyến đi ${tripId}`);
+    }
+
+    // Nếu chuyến đi đã bị huỷ trước đó (ví dụ khách huỷ hoặc timeout), phát lệnh giải phóng tài xế ngay lập tức
+    if (trip.status === 'CANCELLED' || [SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
+      if (driverId) {
+        this.outbox.insertEvent({
+          aggregateType: 'TRIP',
+          aggregateId: tripId,
+          eventType: 'trip.event.release_driver',
+          payload: {
+            trip_id: tripId,
+            driver_id: driverId,
+            reason: 'TRIP_ALREADY_CANCELLED_OR_FAILED',
+          },
+          correlationId: correlationId || saga.correlation_id,
+        });
+      }
+      this.markEventProcessed(eventId, 'trip.event.driver_matched');
+      return { action: 'STALE_EVENT_DRIVER_RELEASED', tripId };
     }
 
     const now = new Date().toISOString();
@@ -146,7 +165,7 @@ class SagaCoordinator {
         payload: {
           trip_id: tripId,
           driver_id: driverId,
-          amount: fare,
+          amount: fare || trip.fare,
         },
         correlationId: correlationId || saga.correlation_id,
       });
@@ -172,8 +191,15 @@ class SagaCoordinator {
       throw new Error(`Không tìm thấy Saga cho chuyến đi ${tripId}`);
     }
 
-    if ([SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
-      return { action: 'SKIPPED_DUE_TO_TERMINAL_STATE' };
+    const trip = this.db.get('SELECT * FROM trips WHERE id = ?;', tripId);
+    if (!trip) {
+      throw new Error(`Không tìm thấy chuyến đi ${tripId}`);
+    }
+
+    // Chặn stale event: Nếu chuyến đã bị huỷ hoặc kết thúc, không được ghi đè CONFIRMED
+    if (trip.status === 'CANCELLED' || [SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
+      this.markEventProcessed(eventId, 'payment.event.hold_success');
+      return { action: 'STALE_EVENT_IGNORED_TRIP_CANCELLED' };
     }
 
     const now = new Date().toISOString();

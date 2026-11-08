@@ -15,6 +15,8 @@ const { SAGA_STATUS } = require('../src/trip-service/saga-coordinator');
 
 const TEST_PORT = 8904;
 const TEST_DB = path.join(__dirname, '..', 'data', 'test_saga_db.sqlite');
+const INTERNAL_KEY = 'dev-internal-service-key-ds03';
+const INTERNAL_HEADERS = { 'x-internal-key': INTERNAL_KEY };
 
 function cleanTestDb() {
   for (const ext of ['', '-wal', '-shm']) {
@@ -120,6 +122,7 @@ async function runTests() {
       const res = await makeRequest({
         method: 'POST',
         path: '/internal/events',
+        headers: INTERNAL_HEADERS,
         body: {
           event_id: 'evt_matched_001',
           event_type: 'trip.event.driver_matched',
@@ -152,6 +155,7 @@ async function runTests() {
       const res = await makeRequest({
         method: 'POST',
         path: '/internal/events',
+        headers: INTERNAL_HEADERS,
         body: {
           event_id: 'evt_hold_success_001',
           event_type: 'payment.event.hold_success',
@@ -194,6 +198,7 @@ async function runTests() {
       await makeRequest({
         method: 'POST',
         path: '/internal/events',
+        headers: INTERNAL_HEADERS,
         body: {
           event_id: 'evt_matched_002',
           event_type: 'trip.event.driver_matched',
@@ -210,6 +215,7 @@ async function runTests() {
       const res = await makeRequest({
         method: 'POST',
         path: '/internal/events',
+        headers: INTERNAL_HEADERS,
         body: {
           event_id: 'evt_hold_failed_002',
           event_type: 'payment.event.hold_failed',
@@ -265,6 +271,7 @@ async function runTests() {
       const resFail = await makeRequest({
         method: 'POST',
         path: '/internal/events',
+        headers: INTERNAL_HEADERS,
         body: {
           event_id: 'evt_no_driver_003',
           event_type: 'trip.event.matching_failed',
@@ -292,6 +299,7 @@ async function runTests() {
       const resDup = await makeRequest({
         method: 'POST',
         path: '/internal/events',
+        headers: INTERNAL_HEADERS,
         body: {
           event_id: 'evt_hold_failed_002', // Đã xử lý ở test 2.2
           event_type: 'payment.event.hold_failed',
@@ -316,10 +324,12 @@ async function runTests() {
     await test('Saga 5: Tắt service và khởi động lại -> Dữ liệu Saga và Outbox được phục hồi hoàn chỉnh', async () => {
       // Dừng service hiện tại
       await service.stop();
+      await new Promise((r) => setTimeout(r, 100));
 
       // Khởi động lại service trỏ vào cùng cơ sở dữ liệu
       service = createTripService({ port: TEST_PORT, dbPath: TEST_DB });
       await service.start();
+      await new Promise((r) => setTimeout(r, 50));
 
       // Kiểm tra Saga của chuyến xe thành công
       const sagaHappy = service.sagaCoordinator.getSagaStatus(happyTripId);
@@ -333,6 +343,119 @@ async function runTests() {
 
       // Kiểm tra bảng processed_events vẫn ghi nhớ các event ID đã xử lý
       assert.strictEqual(service.sagaCoordinator.isEventProcessed('evt_hold_failed_002'), true);
+    });
+
+    // -------------------------------------------------------------
+    // KỊCH BẢN 6: OUT-OF-ORDER & STALE EVENT PROTECTION
+    // -------------------------------------------------------------
+    await test('Saga 6: Stale driver_matched đến sau khi chuyến xe đã CANCELLED -> Chuyến giữ nguyên CANCELLED và lập tức phát release_driver', async () => {
+      // Tạo chuyến xe mới
+      const resCreate = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'Point A',
+          dropoff_latitude: 21.04,
+          dropoff_longitude: 105.81,
+          dropoff_address: 'Point B',
+        },
+      });
+      const staleTripId = resCreate.body.data.id;
+
+      // Khách huỷ chuyến khi đang ở trạng thái PENDING
+      const resCancel = await makeRequest({
+        method: 'POST',
+        path: `/trips/${staleTripId}/cancel`,
+        body: { reason: 'Khách đổi ý muốn đi bộ' },
+      });
+      assert.strictEqual(resCancel.status, 200);
+
+      // Matching service muộn màng gửi event driver_matched
+      const resLateMatch = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_late_match_006',
+          event_type: 'trip.event.driver_matched',
+          payload: {
+            trip_id: staleTripId,
+            driver_id: 'driver_late_999',
+            estimated_fare: 42000,
+          },
+        },
+      });
+      assert.strictEqual(resLateMatch.status, 200);
+      assert.strictEqual(resLateMatch.body.data.action, 'STALE_EVENT_DRIVER_RELEASED');
+
+      // Chuyến xe vẫn giữ nguyên CANCELLED, không bị chuyển thành DRIVER_ASSIGNED
+      const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', staleTripId);
+      assert.strictEqual(trip.status, 'CANCELLED');
+
+      // Outbox bắt buộc phải có lệnh bù trừ giải phóng tài xế muộn
+      const releaseEvt = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'trip.event.release_driver';",
+        staleTripId
+      );
+      assert(releaseEvt, 'Phải có event trip.event.release_driver trong Outbox để giải phóng tài xế');
+      const payload = JSON.parse(releaseEvt.payload);
+      assert.strictEqual(payload.driver_id, 'driver_late_999');
+    });
+
+    await test('Saga 7: Stale payment.event.hold_success đến sau khi chuyến xe đã CANCELLED -> Bỏ qua an toàn, không overwrite CONFIRMED', async () => {
+      // failedTripId đã bị CANCELLED ở Kịch bản 2
+      const resLateHold = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_late_hold_success_007',
+          event_type: 'payment.event.hold_success',
+          payload: {
+            trip_id: failedTripId,
+          },
+        },
+      });
+      assert.strictEqual(resLateHold.status, 200);
+      assert.strictEqual(resLateHold.body.data.action, 'STALE_EVENT_IGNORED_TRIP_CANCELLED');
+
+      // Chuyến xe vẫn là CANCELLED
+      const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', failedTripId);
+      assert.strictEqual(trip.status, 'CANCELLED');
+    });
+
+    // -------------------------------------------------------------
+    // KỊCH BẢN 8: BẢO MẬT INTERNAL ENDPOINT VỚI X-INTERNAL-KEY
+    // -------------------------------------------------------------
+    await test('Saga 8: Endpoint /internal/events từ chối truy cập nếu thiếu hoặc sai x-internal-key (HTTP 401)', async () => {
+      // 8.1. Không có x-internal-key
+      const resNoKey = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        body: {
+          event_id: 'evt_unauth_001',
+          event_type: 'trip.event.driver_matched',
+          payload: { trip_id: happyTripId, driver_id: 'driver_hacker' },
+        },
+      });
+      assert.strictEqual(resNoKey.status, 401);
+      assert.strictEqual(resNoKey.body.error.code, 'UNAUTHORIZED_INTERNAL');
+
+      // 8.2. Có key nhưng sai
+      const resWrongKey = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: { 'x-internal-key': 'attacker-fake-key' },
+        body: {
+          event_id: 'evt_unauth_002',
+          event_type: 'trip.event.driver_matched',
+          payload: { trip_id: happyTripId, driver_id: 'driver_hacker' },
+        },
+      });
+      assert.strictEqual(resWrongKey.status, 401);
+      assert.strictEqual(resWrongKey.body.error.code, 'UNAUTHORIZED_INTERNAL');
     });
 
   } finally {

@@ -69,7 +69,7 @@ async function runTests() {
   console.log('='.repeat(65));
 
   cleanTestDb();
-  const service = createIdentityService({ port: TEST_PORT, dbPath: TEST_DB });
+  let service = createIdentityService({ port: TEST_PORT, dbPath: TEST_DB });
   await service.start();
 
   let passed = 0;
@@ -283,8 +283,18 @@ async function runTests() {
       assert.strictEqual(resAfter.status, 401);
     });
 
-    // 14. API Nội bộ verify token
-    await test('API nội bộ /internal/verify-token xác thực chính xác', async () => {
+    // 14. API Nội bộ verify token (Bảo vệ bằng X-Internal-Key)
+    await test('ST-01: API nội bộ /internal/verify-token yêu cầu X-Internal-Key (chặn truy cập không khoá)', async () => {
+      const resWithoutKey = await makeRequest({
+        method: 'POST',
+        path: '/internal/verify-token',
+        body: { token: 'some_token' },
+      });
+      assert.strictEqual(resWithoutKey.status, 401);
+      assert.strictEqual(resWithoutKey.body.error.code, 'UNAUTHORIZED_INTERNAL');
+    });
+
+    await test('API nội bộ /internal/verify-token xác thực chính xác khi có X-Internal-Key hợp lệ', async () => {
       const driverRes = await makeRequest({
         method: 'POST',
         path: '/auth/login',
@@ -295,11 +305,76 @@ async function runTests() {
       const resVerify = await makeRequest({
         method: 'POST',
         path: '/internal/verify-token',
+        headers: { 'x-internal-key': 'dev-internal-service-key-ds03' },
         body: { token: driverToken },
       });
       assert.strictEqual(resVerify.status, 200);
       assert.strictEqual(resVerify.body.data.valid, true);
       assert.strictEqual(resVerify.body.data.user.role, 'DRIVER');
+    });
+
+    // 15. Kiểm tra Blacklist bền vững trong SQLite sau khi khởi động lại Service (Section 5.3)
+    await test('Section 5.3: Token đã logout vẫn bị từ chối sau khi Identity Service restart (Persistent Blacklist)', async () => {
+      // 1. Đăng nhập lấy token mới
+      const loginRes = await makeRequest({
+        method: 'POST',
+        path: '/auth/login',
+        body: { email: 'driver1@test.com', password: 'DriverPassword123!' },
+      });
+      const persistentToken = loginRes.body.data.token;
+
+      // 2. Sử dụng token thành công
+      const meBefore = await makeRequest({
+        method: 'GET',
+        path: '/auth/me',
+        headers: { Authorization: `Bearer ${persistentToken}` },
+      });
+      assert.strictEqual(meBefore.status, 200);
+
+      // 3. Logout
+      const logoutRes = await makeRequest({
+        method: 'POST',
+        path: '/auth/logout',
+        headers: { Authorization: `Bearer ${persistentToken}` },
+      });
+      assert.strictEqual(logoutRes.status, 200);
+
+      // 4. Token cũ bị từ chối ngay lập tức
+      const meAfterLogout = await makeRequest({
+        method: 'GET',
+        path: '/auth/me',
+        headers: { Authorization: `Bearer ${persistentToken}` },
+      });
+      assert.strictEqual(meAfterLogout.status, 401);
+
+      // 5. Tắt service và khởi động lại
+      await service.stop();
+      await new Promise((r) => setTimeout(r, 50));
+      service = createIdentityService({ port: TEST_PORT, dbPath: TEST_DB });
+      await service.start();
+
+      // 6. Token cũ VẪN BỊ TỪ CHỐI sau restart nhờ SQLite persistence
+      const meAfterRestart = await makeRequest({
+        method: 'GET',
+        path: '/auth/me',
+        headers: { Authorization: `Bearer ${persistentToken}` },
+      });
+      assert.strictEqual(meAfterRestart.status, 401, 'Token đã logout phải bị từ chối cả sau khi restart');
+
+      // 7. Token mới đăng nhập sau restart vẫn hoạt động bình thường
+      const newLogin = await makeRequest({
+        method: 'POST',
+        path: '/auth/login',
+        body: { email: 'driver1@test.com', password: 'DriverPassword123!' },
+      });
+      assert.strictEqual(newLogin.status, 200);
+      const freshToken = newLogin.body.data.token;
+      const meFresh = await makeRequest({
+        method: 'GET',
+        path: '/auth/me',
+        headers: { Authorization: `Bearer ${freshToken}` },
+      });
+      assert.strictEqual(meFresh.status, 200);
     });
 
   } finally {
