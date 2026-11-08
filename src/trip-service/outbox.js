@@ -1,13 +1,66 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const http = require('node:http');
+const config = require('./config');
+
+/**
+ * Publisher mạng mặc định: Gửi envelope sự kiện sang Message Broker (Port 4000) qua HTTP POST
+ * Xác nhận Publisher Acknowledgment dựa trên HTTP Status 2xx từ Broker
+ */
+function defaultHttpPublisher(envelope) {
+  const brokerUrl = config.SERVICES.broker || 'http://127.0.0.1:4000';
+  const parsed = new URL('/events', brokerUrl);
+
+  return new Promise((resolve, reject) => {
+    const payloadStr = JSON.stringify(envelope);
+    const req = http.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port || 4000,
+        path: parsed.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payloadStr),
+          'X-Internal-Key': config.INTERNAL_KEY,
+          'X-Correlation-ID': envelope.correlation_id || '',
+        },
+        timeout: 5000,
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ acknowledged: true, statusCode: res.statusCode });
+          } else {
+            const errBody = Buffer.concat(chunks).toString('utf8');
+            reject(new Error(`Broker từ chối event (${envelope.event_type}) với HTTP ${res.statusCode}: ${errBody}`));
+          }
+        });
+      }
+    );
+
+    req.on('error', (err) => {
+      reject(new Error(`Không thể kết nối tới Broker (${brokerUrl}): ${err.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error(`Kết nối tới Broker (${brokerUrl}) bị quá hạn (Timeout 5000ms)`));
+    });
+
+    req.write(payloadStr);
+    req.end();
+  });
+}
 
 class OutboxManager {
   constructor(db, options = {}) {
     this.db = db;
     this.batchSize = options.batchSize || 50;
     this.maxRetries = options.maxRetries || 5;
-    this.publishHandler = options.onPublish || null;
+    this.publishHandler = options.onPublish !== undefined ? options.onPublish : defaultHttpPublisher;
     this.timer = null;
   }
 
@@ -43,7 +96,12 @@ class OutboxManager {
    * Quét và bắn các sự kiện đang PENDING
    */
   async flushPending(customPublishHandler = null) {
-    const handler = customPublishHandler || this.publishHandler;
+    const handler = customPublishHandler !== null ? customPublishHandler : this.publishHandler;
+    if (!handler) {
+      // Không có publish handler nào được cấu hình -> giữ nguyên PENDING để không fake PUBLISHED
+      return 0;
+    }
+
     const events = this.db.all(
       `SELECT * FROM outbox_events 
        WHERE status = 'PENDING' 
@@ -75,11 +133,10 @@ class OutboxManager {
           payload,
         };
 
-        if (handler) {
-          await handler(envelope);
-        }
+        // Bắt buộc gọi handler và chờ xác nhận Publisher Acknowledgment
+        await handler(envelope);
 
-        // Đánh dấu đã publish thành công
+        // Chỉ khi handler hoàn tất không ném lỗi mới đánh dấu PUBLISHED
         const now = new Date().toISOString();
         this.db.run(
           `UPDATE outbox_events 

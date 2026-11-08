@@ -46,15 +46,28 @@ function openDatabase(serviceName, schemaSql = '') {
     },
 
     tx(fn) {
-      db.exec('BEGIN IMMEDIATE;');
+      if (this._txDepth === undefined) this._txDepth = 0;
+      const isTopLevel = this._txDepth === 0;
+
+      if (isTopLevel) {
+        db.exec('BEGIN IMMEDIATE;');
+      }
+      this._txDepth++;
+
       try {
         const result = fn();
-        db.exec('COMMIT;');
+        this._txDepth--;
+        if (isTopLevel) {
+          db.exec('COMMIT;');
+        }
         return result;
       } catch (err) {
-        try {
-          db.exec('ROLLBACK;');
-        } catch (_) {}
+        this._txDepth--;
+        if (isTopLevel) {
+          try {
+            db.exec('ROLLBACK;');
+          } catch (_) {}
+        }
         throw err;
       }
     },

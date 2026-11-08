@@ -448,6 +448,22 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
               correlationId,
             });
           }
+
+          // Nếu chuyến đi đã được CONFIRMED trở đi (tiền đã bị tạm giữ), phát lệnh bù trừ giải phóng tiền
+          if (['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'].includes(trip.status)) {
+            outboxManager.insertEvent({
+              aggregateType: 'TRIP',
+              aggregateId: params.id,
+              eventType: 'payment.event.refund_requested',
+              payload: {
+                trip_id: params.id,
+                passenger_id: trip.passenger_id,
+                amount: trip.fare,
+                reason: reason || 'PASSENGER_CANCELLED',
+              },
+              correlationId,
+            });
+          }
         });
 
         return { id: params.id, status: 'CANCELLED', reason: reason || 'Hành khách huỷ chuyến' };

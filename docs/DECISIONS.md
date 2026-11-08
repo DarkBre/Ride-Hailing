@@ -17,7 +17,7 @@ Tài liệu này ghi lại các quyết định thiết kế kiến trúc quan t
 ## ADR-002: Lựa Chọn Nền Tảng Node.js / TypeScript
 * **Trạng thái:** ĐÃ PHÊ DUYỆT (APPROVED).
 * **Bối cảnh:** Cần chọn ngôn ngữ phát triển microservices nhẹ, có hệ sinh thái thư viện mạnh cho Message Queue, HTTP, SSE và TypeScript typesafety.
-* **Quyết định:** Sử dụng Node.js v20+ với TypeScript.
+* **Quyết định:** Sử dụng Node.js v22.13.0+ LTS (hỗ trợ native `node:sqlite` không cần cờ experimental) với kiến trúc Pure Node.js zero external dependencies.
 * **Lý do:**
   1. Hỗ trợ I/O bất đồng bộ tự nhiên (Event Loop), cực kỳ phù hợp cho dịch vụ stream dữ liệu toạ độ GPS và lắng nghe event từ RabbitMQ.
   2. Hỗ trợ Server-Sent Events (SSE) và WebSocket đơn giản, giúp xây dựng Web Simulation Dashboard mượt mà.

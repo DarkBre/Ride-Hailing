@@ -457,6 +457,124 @@ async function runTests() {
       assert.strictEqual(res.body.error.code, 'UNAUTHORIZED_INTERNAL');
     });
 
+    // 11. Hạng mục P0: Kiểm tra Outbox Publisher mạng thật & Chịu lỗi khi Broker sập/khôi phục
+    await test('Outbox Publisher: Broker mất kết nối -> Event giữ nguyên PENDING, tăng retry_count (Không fake PUBLISHED)', async () => {
+      // 11.1. Chèn sự kiện thử nghiệm vào Outbox
+      const evt = service.outboxManager.insertEvent({
+        aggregateType: 'TRIP',
+        aggregateId: 'test_trip_outbox_offline',
+        eventType: 'trip.event.created',
+        payload: { trip_id: 'test_trip_outbox_offline', fare: 30000 },
+      });
+
+      // Tạo một publisher trỏ vào cổng không tồn tại (giả lập Broker sập)
+      const offlinePublisher = (envelope) => {
+        return new Promise((_, reject) => {
+          reject(new Error('connect ECONNREFUSED 127.0.0.1:59999'));
+        });
+      };
+
+      // Thực hiện quét outbox khi broker offline
+      await service.outboxManager.flushPending(offlinePublisher);
+
+      // Kiểm tra trong DB: Event KHÔNG được đánh dấu PUBLISHED mà vẫn là PENDING, retry_count = 1
+      const savedEvt = service.db.get('SELECT * FROM outbox_events WHERE id = ?;', evt.eventId);
+      assert.strictEqual(savedEvt.status, 'PENDING', 'Sự kiện phải giữ nguyên PENDING khi broker offline');
+      assert.strictEqual(savedEvt.retry_count, 1, 'retry_count phải được tăng lên 1');
+      assert.strictEqual(savedEvt.published_at, null, 'published_at phải là null');
+    });
+
+    await test('Outbox Publisher: Broker phục hồi -> Event được gửi thành công và chuyển sang PUBLISHED', async () => {
+      // Giả lập Broker đã phục hồi và nhận envelope thành công
+      const receivedByBroker = [];
+      const recoveredPublisher = async (envelope) => {
+        receivedByBroker.push(envelope);
+        return { acknowledged: true, statusCode: 200 };
+      };
+
+      // Quét lại outbox
+      const count = await service.outboxManager.flushPending(recoveredPublisher);
+      assert(count >= 1, 'Phải publish thành công ít nhất 1 sự kiện');
+
+      // Kiểm tra trong DB: Event đã được chuyển sang PUBLISHED
+      const publishedEvt = service.db.get("SELECT * FROM outbox_events WHERE aggregate_id = 'test_trip_outbox_offline';");
+      assert.strictEqual(publishedEvt.status, 'PUBLISHED', 'Sự kiện phải chuyển thành PUBLISHED sau khi gửi thành công');
+      assert(publishedEvt.published_at !== null, 'published_at phải có giá trị thời gian');
+      assert.strictEqual(receivedByBroker.length >= 1, true, 'Broker phải nhận được envelope sự kiện');
+    });
+
+    // 12. Hạng mục P1: Kiểm tra State Machine - Chặn chuyển trạng thái bất hợp lệ
+    await test('State Machine: Chặn nhảy trạng thái trái phép từ REQUESTED sang IN_PROGRESS (HTTP 400)', async () => {
+      const resCreate = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'Diem Don',
+          dropoff_latitude: 21.05,
+          dropoff_longitude: 105.82,
+          dropoff_address: 'Diem Den',
+        },
+      });
+      assert.strictEqual(resCreate.body.data.status, 'REQUESTED', 'Trạng thái khởi tạo bắt buộc phải là REQUESTED');
+      const tripId = resCreate.body.data.id;
+
+      // Cố tình gọi /start khi chưa DRIVER_ASSIGNED và ACCEPTED
+      const resStart = await makeRequest({
+        method: 'POST',
+        path: `/trips/${tripId}/start`,
+      });
+      assert.strictEqual(resStart.status, 400);
+      assert.strictEqual(resStart.body.error.code, 'INVALID_STATE_TRANSITION');
+    });
+
+    await test('Saga Bù trừ: Huỷ chuyến khi đã CONFIRMED -> Sinh cả release_driver lẫn payment.event.refund_requested', async () => {
+      // Tạo chuyến mới và giả lập chuyển sang CONFIRMED kèm tài xế
+      const resCreate = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'Diem A',
+          dropoff_latitude: 21.05,
+          dropoff_longitude: 105.82,
+          dropoff_address: 'Diem B',
+        },
+      });
+      const confirmedTripId = resCreate.body.data.id;
+
+      // Cập nhật trạng thái thành CONFIRMED đã gán tài xế
+      service.db.run(
+        "UPDATE trips SET status = 'CONFIRMED', driver_id = 'driver_d88' WHERE id = ?;",
+        confirmedTripId
+      );
+
+      // Khách huỷ chuyến khi đã CONFIRMED
+      const resCancel = await makeRequest({
+        method: 'POST',
+        path: `/trips/${confirmedTripId}/cancel`,
+        body: { reason: 'Khách đổi kế hoạch' },
+      });
+      assert.strictEqual(resCancel.status, 200);
+
+      // Kiểm tra Outbox phải có CẢ 2 sự kiện: giải phóng tài xế VÀ hoàn tiền tạm giữ
+      const releaseDriver = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'trip.event.release_driver';",
+        confirmedTripId
+      );
+      const refundPayment = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.refund_requested';",
+        confirmedTripId
+      );
+
+      assert(releaseDriver, 'Phải có sự kiện bù trừ release_driver');
+      assert(refundPayment, 'Phải có sự kiện bù trừ payment.event.refund_requested');
+      assert.strictEqual(JSON.parse(releaseDriver.payload).driver_id, 'driver_d88');
+      assert(JSON.parse(refundPayment.payload).amount > 0);
+    });
+
   } finally {
     await service.stop();
     cleanTestDb();

@@ -117,20 +117,22 @@ class SagaCoordinator {
 
     // Nếu chuyến đi đã bị huỷ trước đó (ví dụ khách huỷ hoặc timeout), phát lệnh giải phóng tài xế ngay lập tức
     if (trip.status === 'CANCELLED' || [SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
-      if (driverId) {
-        this.outbox.insertEvent({
-          aggregateType: 'TRIP',
-          aggregateId: tripId,
-          eventType: 'trip.event.release_driver',
-          payload: {
-            trip_id: tripId,
-            driver_id: driverId,
-            reason: 'TRIP_ALREADY_CANCELLED_OR_FAILED',
-          },
-          correlationId: correlationId || saga.correlation_id,
-        });
-      }
-      this.markEventProcessed(eventId, 'trip.event.driver_matched');
+      this.db.tx(() => {
+        if (driverId) {
+          this.outbox.insertEvent({
+            aggregateType: 'TRIP',
+            aggregateId: tripId,
+            eventType: 'trip.event.release_driver',
+            payload: {
+              trip_id: tripId,
+              driver_id: driverId,
+              reason: 'TRIP_ALREADY_CANCELLED_OR_FAILED',
+            },
+            correlationId: correlationId || saga.correlation_id,
+          });
+        }
+        this.markEventProcessed(eventId, 'trip.event.driver_matched');
+      });
       return { action: 'STALE_EVENT_DRIVER_RELEASED', tripId };
     }
 
@@ -196,10 +198,46 @@ class SagaCoordinator {
       throw new Error(`Không tìm thấy chuyến đi ${tripId}`);
     }
 
-    // Chặn stale event: Nếu chuyến đã bị huỷ hoặc kết thúc, không được ghi đè CONFIRMED
+    // Xử lý race condition khi payment.event.hold_success đến sau khi chuyến đã bị huỷ:
+    // Tuyệt đối không chỉ bỏ qua mà phải kích hoạt bù trừ giải phóng số tiền đã bị giữ
     if (trip.status === 'CANCELLED' || [SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
-      this.markEventProcessed(eventId, 'payment.event.hold_success');
-      return { action: 'STALE_EVENT_IGNORED_TRIP_CANCELLED' };
+      const now = new Date().toISOString();
+      let compensationEvent = null;
+
+      this.db.tx(() => {
+        // 1. Ghi nhận sự kiện bù trừ vào Transactional Outbox để giải phóng khoản hold ở Payment Service
+        compensationEvent = this.outbox.insertEvent({
+          aggregateType: 'TRIP',
+          aggregateId: tripId,
+          eventType: 'payment.event.refund_requested',
+          payload: {
+            trip_id: tripId,
+            passenger_id: trip.passenger_id,
+            amount: trip.fare,
+            reason: 'TRIP_CANCELLED_COMPENSATION_RELEASE_HOLD',
+          },
+          correlationId: correlationId || saga.correlation_id,
+        });
+
+        // 2. Cập nhật Saga Instance sang COMPENSATED với bước giải phóng tiền
+        this.db.run(
+          `UPDATE saga_instances 
+           SET status = ?, current_step = 'COMPENSATION_RELEASE_PAYMENT', updated_at = ? 
+           WHERE trip_id = ?;`,
+          SAGA_STATUS.COMPENSATED,
+          now,
+          tripId
+        );
+
+        // 3. Đánh dấu event đã xử lý (chống trùng lặp Idempotency)
+        this.markEventProcessed(eventId, 'payment.event.hold_success');
+      });
+
+      return {
+        action: 'STALE_EVENT_COMPENSATED_PAYMENT_RELEASED',
+        tripId,
+        refundEventId: compensationEvent ? compensationEvent.eventId : null,
+      };
     }
 
     const now = new Date().toISOString();

@@ -15,8 +15,8 @@ console.log('='.repeat(60));
 // 1. Kiểm tra phiên bản Node.js
 const [major, minor] = process.versions.node.split('.').map(Number);
 console.log(`[1/5] Kiểm tra phiên bản Node.js: v${process.versions.node}`);
-if (major < 22 || (major === 22 && minor < 5)) {
-  console.error(`❌ Yêu cầu Node.js >= 22.5.0 (để hỗ trợ native node:sqlite). Hiện tại: v${process.versions.node}`);
+if (major < 22 || (major === 22 && minor < 13)) {
+  console.error(`❌ Yêu cầu Node.js >= 22.13.0 (để hỗ trợ native node:sqlite không cần cờ experimental). Hiện tại: v${process.versions.node}`);
   process.exit(1);
 }
 console.log('  -> OK: Phiên bản Node.js tương thích chuẩn.');
