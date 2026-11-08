@@ -1,0 +1,21 @@
+{
+  "name": "ride-hailing-ds03",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DS03: Ride-Hailing Microservices System (Distributed Systems Course Project)",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "check": "node scripts/check.js"
+  },
+  "keywords": [
+    "distributed-systems",
+    "microservices",
+    "ride-hailing",
+    "saga",
+    "sqlite"
+  ],
+  "author": "DarkBre",
+  "license": "UNLICENSED"
+}
