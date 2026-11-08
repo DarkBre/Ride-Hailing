@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-08
+### Changed
+- **Cập nhật chính thức danh sách thành viên nhóm và phân công chi tiết**:
+  - **Thành viên 1 (Trưởng nhóm / DarkBre)**: Phụ trách `Trip Service` (:4003), `Pricing Service` (:4005), `Identity Service` (:4001), Saga Coordinator & Bù trừ, Demo Phút 1–3, Báo cáo Chương 1–4.
+  - **Thành viên 2 (Dương Quốc Hoàng)**: Phụ trách `Driver Service` (:4002), `Matching Service` (:4004), `Payment Service` (:4006), CAS Lock Concurrency & Idempotency, Demo Phút 4–6, Báo cáo Chương 5–8.
+  - **Thành viên 3 (Quang)**: Phụ trách `Broker Service` (:4000), `Notification Service` (:4007), `API Gateway & Web UI` (:8080), Reliable Queue & Fault Recovery, Demo Phút 7–10, Báo cáo Chương 9–13.
+- Cập nhật đồng bộ toàn bộ tài liệu SSOT (`README.md`, `docs/PROJECT_BRIEF.md`, `docs/ARCHITECTURE.md`, `docs/TEST_PLAN.md`) sang kiến trúc 9 microservices chuẩn tỷ lệ 33.3% - 33.3% - 33.3%.
+
 ## [0.1.0] - 2026-11-04
 ### Added
 - **Giai đoạn 0 & 1 Completed (Initialization & Scope Freeze)**:

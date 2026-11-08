@@ -46,18 +46,71 @@ Hệ thống được thiết kế theo mô hình Microservices hướng sự ki
 
 ---
 
+```
+                            [ Web Simulation Dashboard (Port 8080) ]
+                                                │
+                                                │ HTTP / REST / SSE Stream
+                                                ▼
+                                    ┌───────────────────────┐
+                                    │      API GATEWAY      │
+                                    │      (Port 8080)      │
+                                    │ • Request Routing     │
+                                    │ • Reverse Proxy       │
+                                    │ • JWT Verification    │
+                                    │ • Sinh Correlation-ID │
+                                    └───────────┬───────────┘
+                                                │
+        ┌───────────────────────┬───────────────┴───────────────┬───────────────────────┐
+        ▼                       ▼                               ▼                       ▼
+ ┌──────────────┐      ┌─────────────────┐             ┌─────────────────┐     ┌─────────────────┐
+ │Identity/User │      │ Driver/Location │             │  Trip/Booking   │     │Simulated Payment│
+ │   Service    │      │     Service     │             │     Service     │     │     Service     │
+ │ (Port 4001)  │      │   (Port 4002)   │             │   (Port 4003)   │     │   (Port 4006)   │
+ │DB:identity.db│      │ DB: driver.db   │             │  DB: trip.db    │     │ DB: payment.db  │
+ └──────────────┘      └────────┬────────┘             └────────┬────────┘     └────────┬────────┘
+                                │                               │                       │
+                                │ REST Query                    │                       │
+                                ▼                               │                       │
+                       ┌─────────────────┐             ┌────────▼────────┐              │
+                       │Matching Service │             │ Pricing Service │              │
+                       │   (Port 4004)   │             │   (Port 4005)   │              │
+                       │  DB: matching.db│             │  DB: pricing.db │              │
+                       └────────┬────────┘             └─────────────────┘              │
+                                │                               │                       │
+                                ▼                               ▼                       ▼
+                      ═════════════════════════════════════════════════════════════════════════
+                                      RELIABLE MESSAGE BROKER (Port 4000)
+                           Topics: trip.event.created, trip.event.driver_matched,
+                                   payment.event.hold_success, payment.event.hold_failed,
+                                   trip.event.release_driver, trip.event.completed
+                           Dead-Letter Queue (DLQ): dead_letter_events (DB: broker.db)
+                      ═════════════════════════════════════════════════════════════════════════
+                                                │
+                                                ▼
+                                    ┌───────────────────────┐
+                                    │ Notification Service  │
+                                    │      (Port 4007)      │
+                                    │  DB: notification.db  │
+                                    └───────────────────────┘
+```
+
+---
+
 ## 2. Đặc Tả Các Microservices & Database-Per-Service
 
 Theo nguyên tắc bất khả xâm phạm của kiến trúc Microservices trong môn Hệ Phân Tán: **Mỗi service sở hữu cơ sở dữ liệu riêng, không có bất kỳ kết nối chéo DB nào**.
 
-| Tên Microservice | Port | Database | Ranh giới Trách nhiệm & Dữ liệu quản lý |
-|---|---|---|---|
-| **API Gateway** | 8080 | Không có DB | Cửa ngõ duy nhất đón nhận request từ Client. Sinh `X-Correlation-ID`, kiểm tra JWT token, chuyển tiếp request đến các internal service qua mạng HTTP nội bộ. Hỗ trợ Server-Sent Events (SSE) để stream log trực quan về UI. |
-| **Identity Service** | 8001 | `user_db` (Postgres) | Đăng ký, đăng nhập, băm mật khẩu `bcrypt`, cấp phát JWT token mang role `DRIVER` hoặc `PASSENGER`. |
-| **Driver Location Service** | 8002 | `driver_db` (Postgres) | Quản lý thông tin hồ sơ tài xế, trạng thái (`AVAILABLE`, `BUSY`, `OFFLINE`), toạ độ GPS giả lập `(lat, lon)`. Cung cấp API truy vấn tài xế khả dụng theo toạ độ. |
-| **Trip Booking Service** | 8003 | `trip_db` (Postgres) | Quản lý toàn bộ vòng đời chuyến đi. Chứa **Dynamic Pricing Engine** và **Outbox Pattern Table**. Điều phối luồng Saga giao dịch phân tán. |
-| **Matching Service** | 8004 | `match_db` (Postgres) | Tiếp nhận yêu cầu tìm xe, truy vấn danh sách tài xế gần điểm đón, thực hiện **PostgreSQL Concurrency Lock** để độc quyền tài xế cho một cuốc xe duy nhất. |
-| **Payment Service** | 8005 | `payment_db` (Postgres) | Quản lý ví ảo của khách hàng. Thực hiện 3 thao tác giao dịch: `Hold` (tạm giữ số dư), `Capture` (trừ tiền khi hoàn thành chuyến), `Refund/Release` (bù trừ trả lại tiền nếu huỷ cuốc). |
+| Tên Microservice | Port | Database | Ranh giới Trách nhiệm & Dữ liệu quản lý | Thành viên phụ trách |
+|---|---|---|---|:---:|
+| **Identity Service** | 4001 | `identity.db` | Đăng ký, đăng nhập, băm mật khẩu `scrypt`, cấp phát & xác thực JWT token mang role `customer` hoặc `driver`. | **Thành viên 1** *(Trưởng nhóm)* |
+| **Pricing Service** | 4005 | `pricing.db` | Tính cước động (Dynamic Pricing) theo khoảng cách Haversine GPS và hệ số cao điểm (Surge Multiplier). | **Thành viên 1** *(Trưởng nhóm)* |
+| **Trip Service** | 4003 | `trip.db` | Quản lý toàn bộ vòng đời chuyến đi. Chứa **Saga Orchestrator Coordinator**, xử lý bù trừ và Transactional Outbox. | **Thành viên 1** *(Trưởng nhóm)* |
+| **Driver Service** | 4002 | `driver.db` | Quản lý hồ sơ tài xế, trạng thái (`AVAILABLE`, `BUSY`, `OFFLINE`), toạ độ GPS. Cung cấp API truy vấn tài xế khả dụng lân cận. | **Thành viên 2** *(Dương Quốc Hoàng)* |
+| **Matching Service** | 4004 | `matching.db` | Tìm tài xế gần nhất, áp dụng **CAS Optimistic Lock Concurrency** để đảm bảo 1 tài xế chỉ nhận 1 khách duy nhất. | **Thành viên 2** *(Dương Quốc Hoàng)* |
+| **Payment Service** | 4006 | `payment.db` | Quản lý ví ảo của khách hàng. Thực hiện giao dịch: `Hold` (tạm giữ số dư), `Capture` (trừ tiền thật) và `Refund` (bù trừ trả tiền). | **Thành viên 2** *(Dương Quốc Hoàng)* |
+| **Broker Service** | 4000 | `broker.db` | Message broker trung tâm, pub/sub theo topic, lưu trữ tin nhắn bền vững, Dead-Letter Queue (DLQ), retry với backoff. | **Thành viên 3** *(Quang)* |
+| **Notification Service** | 4007 | `notification.db` | Tiếp nhận sự kiện từ Broker, gửi thông báo đẩy đến khách và tài xế qua WebSocket/SSE. | **Thành viên 3** *(Quang)* |
+| **API Gateway & Web UI** | 8080 | Không có DB | Cửa ngõ duy nhất đón nhận request từ Client, sinh `X-Correlation-ID`, chuyển tiếp request, SSE live stream log và giao diện Leaflet map. | **Thành viên 3** *(Quang)* |
 
 ---
 
