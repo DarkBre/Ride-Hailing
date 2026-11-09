@@ -1,0 +1,11 @@
+{
+  "name": "ds03-matching-service",
+  "private": true,
+  "version": "1.0.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc --strict --module Node16 --target ES2022 --outDir dist geo.ts",
+    "test": "npm run build && node --test geo.test.cjs"
+  },
+  "devDependencies": { "typescript": "5.9.3" }
+}
