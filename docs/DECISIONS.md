@@ -8,6 +8,10 @@ Driver thực hiện reserve/confirm/release vì hàng tài xế thuộc Driver.
 
 Tạm giữ bằng reservation có thời hạn 30 giây mặc định. GPS và bán kính là cấu hình demo. Provision hồ sơ Driver được thực hiện bởi operator vì contract đăng ký Identity hiện thiếu thông tin xe.
 
+## ADR-008: Giữ quyền sở hữu SQLite của TV1 trong bản demo
+
+Trạng thái **đề xuất cho nhóm review**. Giữ Identity và Trip trên SQLite WAL riêng, mỗi service một replica ghi. Đặc tả DS03 yêu cầu dữ liệu tách riêng theo service. Quyết định chuyển PostgreSQL phụ thuộc nhu cầu scale ghi, HA và kế hoạch migration/rollback. [Đánh giá triển khai](PRODUCTION_READINESS.md#quyền-sở-hữu-và-sqlite)
+
 Tài liệu này ghi lại các quyết định thiết kế kiến trúc quan trọng, lý do lựa chọn và người phê duyệt theo chuẩn quản trị dự án.
 
 ---

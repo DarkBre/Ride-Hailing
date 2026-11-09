@@ -1,5 +1,7 @@
 # REQUIREMENTS SPECIFICATION: RIDE-HAILING MICROSERVICES (DS03)
 
+**Trạng thái bản demo.** Pricing lấy số tài xế có GPS hợp lệ từ Driver API khi chạy Compose và lưu cước theo chuyến. Trạng thái chuyến đọc qua API. Notification push, SSE và Dashboard chưa có trong bản tích hợp.
+
 ## 1. Phân Loại Yêu Cầu Theo Mô Hình MoSCoW
 
 ### 1.1. Must Have (P0) — Bắt buộc phải có để đạt yêu cầu nghiệm thu

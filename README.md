@@ -17,7 +17,7 @@ docker compose --env-file .env -f deploy/docker-compose.yml up -d --build --wait
 docker compose --env-file .env -f deploy/docker-compose.yml ps
 ```
 
-Gateway tại `http://127.0.0.1:8080` và API tại `/api/v1`. Các port trên mạng Compose gồm Identity 8001, Driver 8002, Trip 8003, Matching 8004, Payment 8005, PostgreSQL 5432 và RabbitMQ 5672. Các cổng nội bộ chỉ dùng trong mạng Compose.
+Gateway tại `http://127.0.0.1:8080` và API tại `/api/v1`. Các port trên mạng Compose gồm Identity 8001, Driver 8002, Trip 8003, Matching 8004, Payment 8005, PostgreSQL 5432 và RabbitMQ 5672. Các cổng nội bộ chỉ dùng trong mạng Compose. Đăng nhập lại sau khi chuyển sang cấu hình JWT có issuer/audience.
 
 ### Chạy tiến trình riêng
 
@@ -54,6 +54,7 @@ node src/api-gateway/index.js
 
 ```sh
 npm run check
+node --test tests/security.test.cjs
 node tests/run-all-tv1.js
 npm --prefix src/matching-service test
 ```
@@ -82,3 +83,8 @@ Trong demo CT-01, đưa đúng một tài xế AVAILABLE ở khu vực tìm ki�
 - [API và sự kiện](docs/CONTRACTS.md)
 - [Tiêu chí nghiệm thu](docs/TEST_PLAN.md)
 - [Audit và bằng chứng chạy](docs/INTEGRATION_REPORT.md)
+- [Audit bảo mật](docs/SECURITY_AUDIT.md)
+- [Đánh giá triển khai](docs/PRODUCTION_READINESS.md)
+- [Kịch bản demo và fault recovery](docs/DEMO_SCRIPT.md)
+- [Kết quả load test](docs/LOAD_TEST_REPORT.md)
+- [Kết quả chaos test](docs/CHAOS_TEST_REPORT.md)

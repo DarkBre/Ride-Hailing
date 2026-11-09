@@ -74,6 +74,28 @@ Driver kiểm tra version và độ mới GPS khi giữ. TTL áp dụng cho HELD
 
 ```mermaid
 sequenceDiagram
+  participant T as Trip
+  participant Q as RabbitMQ
+  participant P as Payment
+  participant M as Matching
+  participant D as Driver
+  T->>Q: payment.event.hold_requested
+  Q->>P: Giữ tiền trong transaction của ví
+  P->>Q: hold_success hoặc hold_failed
+  alt Chuyến hoàn thành
+    T->>Q: trip.event.completed
+    Q->>P: Capture khoản hold theo trip
+  else Chuyến hủy hoặc hết hạn
+    T->>Q: payment.event.refund_requested nếu cần
+    Q->>P: Refund khoản hold hoặc ghi tombstone
+  end
+  T->>Q: trip.event.release_driver
+  Q->>M: Lệnh giải phóng
+  M->>D: Release đúng trip/reservation
+```
+
+```mermaid
+sequenceDiagram
   participant M as Matching
   participant D as Driver
   participant T as Trip

@@ -1,13 +1,15 @@
 const assert = require('node:assert/strict');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
+const { promisify } = require('node:util');
 const { setTimeout: pause } = require('node:timers/promises');
 const { test } = require('node:test');
 
 const base = process.env.GATEWAY_TEST_URL;
-const docker = args => execFileSync('docker', ['compose', '--env-file', process.env.COMPOSE_TEST_ENV_FILE,
-  '-p', process.env.COMPOSE_TEST_PROJECT, '-f', 'deploy/docker-compose.yml', ...args],
-{ encoding: 'utf8', timeout: 15_000 });
+const composeArgs = args => ['compose', '--env-file', process.env.COMPOSE_TEST_ENV_FILE,
+  '-p', process.env.COMPOSE_TEST_PROJECT, '-f', 'deploy/docker-compose.yml', ...args];
+const docker = args => execFileSync('docker', composeArgs(args), { encoding: 'utf8', timeout: 15_000 });
+const dockerAsync = args => promisify(execFile)('docker', composeArgs(args), { timeout: 35_000 });
 const sql = (db, statement, vars = []) => docker(['exec', '-T', 'postgres', 'psql',
   '-X', '-qAt', '-U', 'postgres', '-d', db, '-v', 'ON_ERROR_STOP=1', ...vars, '-c', statement]).trim();
 
@@ -172,7 +174,7 @@ test('Matching restart, driver rejection, passenger cancellation and reservation
 
 test('RabbitMQ retry is bounded and a failing release reaches DLQ', {
   skip: !enabled, timeout: 25_000,
-}, () => {
+}, async () => {
   const script = `
     const assert = require('node:assert/strict');
     const { randomUUID } = require('node:crypto');
@@ -200,5 +202,124 @@ test('RabbitMQ retry is bounded and a failing release reaches DLQ', {
         throw new Error('Test event missing from DLQ');
       } finally { await connection.close(); }
     })().catch(err => { console.error(err.message); process.exitCode = 1; });`;
-  docker(['exec', '-T', 'matching', 'node', '-e', script]);
+  await dockerAsync(['exec', '-T', 'matching', 'node', '-e', script]);
+});
+
+test('Chaos: RabbitMQ outage, Driver and PostgreSQL restarts preserve committed state', {
+  skip: !enabled || process.env.RUN_CHAOS_TEST !== '1', timeout: 120_000,
+}, async () => {
+  const [driver, passenger] = await Promise.all([account('DRIVER'), account('PASSENGER')]);
+  const driverId = sql('driver_db', `INSERT INTO drivers (user_id, name, vehicle_plate)
+    VALUES ('${driver.user.id}', 'Chaos driver', 'SIM-CHAOS') RETURNING id`);
+  const coordinate = { latitude: 33.1, longitude: -162 };
+  await request('/drivers/location', 'PUT', coordinate, driver.token);
+  await request('/drivers/status', 'PUT', { status: 'AVAILABLE' }, driver.token);
+  await request('/payments/topup', 'POST', { amount: 150000 }, passenger.token);
+  let trip;
+  await dockerAsync(['stop', 'rabbitmq']);
+  try {
+    trip = await request('/trips', 'POST', {
+      pickup_latitude: coordinate.latitude, pickup_longitude: coordinate.longitude, pickup_address: 'Chaos pickup',
+      dropoff_latitude: 33.11, dropoff_longitude: -162, dropoff_address: 'Chaos dropoff',
+    }, passenger.token);
+    assert.equal((await request(`/trips/${trip.id}`, 'GET', undefined, passenger.token)).status, 'REQUESTED');
+  } finally {
+    await dockerAsync(['start', 'rabbitmq']);
+  }
+  const assigned = await waitFor(() => request(`/trips/${trip.id}`, 'GET', undefined, passenger.token),
+    row => row.status === 'CONFIRMED', 25_000);
+  assert.equal(assigned.driver_id, driverId);
+  await request(`/trips/${trip.id}/accept`, 'POST', {}, driver.token);
+  const reservation = () => sql('driver_db', `SELECT id || ':' || state FROM driver_reservations WHERE trip_id = '${trip.id}'`);
+  const before = reservation();
+  assert.match(before, /:CONFIRMED$/);
+  await dockerAsync(['restart', 'driver']);
+  await dockerAsync(['start', '--wait', 'driver']);
+  assert.equal(reservation(), before);
+  assert.equal(sql('driver_db', `SELECT status FROM drivers WHERE id = '${driverId}'`), 'BUSY');
+  await dockerAsync(['restart', 'postgres']);
+  await dockerAsync(['start', '--wait', 'postgres']);
+  assert.equal(reservation(), before);
+  assert.equal((await request('/payments/wallet', 'GET', undefined, passenger.token)).held_balance, trip.estimated_fare);
+  await request(`/trips/${trip.id}/complete`, 'POST', {}, driver.token);
+  const wallet = await waitFor(() => request('/payments/wallet', 'GET', undefined, passenger.token),
+    value => value.held_balance === 0);
+  assert.equal(wallet.balance, 150000 - trip.estimated_fare);
+  await waitFor(reservation, value => value.endsWith(':RELEASED'));
+  await request('/drivers/status', 'PUT', { status: 'OFFLINE' }, driver.token);
+});
+
+test('Load: concurrent GPS, nearby, booking and wallet traffic', {
+  skip: !enabled || process.env.RUN_LOAD_TEST !== '1', timeout: 130_000,
+}, async t => {
+  const users = 8;
+  const durationMs = 60_000;
+  const drivers = await Promise.all(Array.from({ length: 4 }, () => account('DRIVER')));
+  const passengers = await Promise.all(Array.from({ length: 4 }, () => account('PASSENGER')));
+  const location = { latitude: 17, longitude: -141 };
+  for (const driver of drivers) {
+    sql('driver_db', `INSERT INTO drivers (user_id, name, vehicle_plate)
+      VALUES ('${driver.user.id}', 'Load driver', 'SIM-LOAD')`);
+    await request('/drivers/status', 'PUT', { status: 'AVAILABLE' }, driver.token);
+  }
+  const observations = {};
+  async function measure(name, run) {
+    const started = performance.now();
+    let failed = false;
+    try { return await run(); } catch { failed = true; return undefined; } finally {
+      (observations[name] ??= []).push({ ms: performance.now() - started, failed });
+    }
+  }
+  const draft = { pickup_latitude: location.latitude, pickup_longitude: location.longitude,
+    pickup_address: 'Load pickup', dropoff_latitude: 17.01, dropoff_longitude: -141,
+    dropoff_address: 'Load dropoff' };
+  const start = performance.now();
+  const deadline = start + durationMs;
+  const queueSamples = [];
+  const connectionSamples = [];
+  const sample = setInterval(() => {
+    try {
+      const output = docker(['exec', '-T', 'rabbitmq', 'rabbitmqctl', '-q', 'list_queues',
+        'name', 'messages_ready', 'messages_unacknowledged']);
+      queueSamples.push(output.split(/\r?\n/).filter(line => /^(trip|payment|matching)\.queue\s/.test(line)));
+      connectionSamples.push(sql('postgres', `SELECT datname || ':' || count(*) FROM pg_stat_activity
+        WHERE datname IN ('driver_db','match_db','payment_db') GROUP BY datname ORDER BY datname`));
+    } catch { /* Retain the samples already captured. */ }
+  }, 15_000);
+  try {
+    await Promise.all([
+      ...drivers.map(async driver => {
+        while (performance.now() < deadline) {
+          await measure('gps', () => request('/drivers/location', 'PUT', location, driver.token));
+          await pause(1150);
+        }
+      }),
+      ...passengers.map(async passenger => {
+        while (performance.now() < deadline) {
+          await measure('nearby', () => request('/drivers/available?lat=17&lon=-141&radius_km=5',
+            'GET', undefined, passenger.token));
+          await measure('wallet', () => request('/payments/wallet', 'GET', undefined, passenger.token));
+          await measure('booking', () => request('/trips', 'POST', draft, passenger.token));
+          // Zero-balance wallets exercise hold failure and compensating release under contention.
+          await pause(1600);
+        }
+      }),
+    ]);
+  } finally {
+    clearInterval(sample);
+  }
+  const seconds = (performance.now() - start) / 1000;
+  const metrics = Object.fromEntries(Object.entries(observations).map(([name, samples]) => {
+    const times = samples.map(item => item.ms).sort((a, b) => a - b);
+    const percentile = p => Math.round(times[Math.ceil(times.length * p) - 1] * 10) / 10;
+    return [name, { requests: times.length, errors: samples.filter(item => item.failed).length,
+      average_ms: Math.round(times.reduce((a, b) => a + b, 0) / times.length * 10) / 10,
+      p95_ms: percentile(.95), p99_ms: percentile(.99) }];
+  }));
+  t.diagnostic(JSON.stringify({ users, seconds, metrics, queueSamples, connectionSamples }));
+  assert.ok(Object.values(metrics).every(item => item.requests > 0));
+  await waitFor(() => sql('driver_db', `SELECT count(*) FROM driver_reservations WHERE state IN ('HELD','CONFIRMED')
+    AND driver_id IN (SELECT id FROM drivers WHERE user_id IN (${drivers.map(d => `'${d.user.id}'`).join(',')}))`),
+  count => count === '0', 30_000);
+  for (const driver of drivers) await request('/drivers/status', 'PUT', { status: 'OFFLINE' }, driver.token);
 });

@@ -1,5 +1,9 @@
 # Báo cáo audit và nghiệm thu tích hợp DS03
 
+## Xác minh phát hành 09/11/2026
+
+Build, 56 regression case TV1, 13 kết quả unit/integration cục bộ và 5 test Compose đã qua. Load 597 request không ghi nhận lỗi HTTP/client. Probe RabbitMQ, Driver và PostgreSQL restart giữ dữ liệu đã commit. Xem [security audit](SECURITY_AUDIT.md), [load test](LOAD_TEST_REPORT.md), [chaos test](CHAOS_TEST_REPORT.md) và [production readiness](PRODUCTION_READINESS.md). Các bảng bên dưới lưu kết quả ở mốc tích hợp trước đợt hardening.
+
 ## Audit tại c7a99e0
 
 Nhánh làm việc `feature/tv2-driver-matching` sạch trước khi bắt đầu. Mã TV1 tại `origin/feature/tv1-identity-trip` commit `8758e74` có Identity, Trip, Pricing và regression suite. Bản tích hợp lấy các file triển khai và test từ commit đó vào working tree. Đặc tả môn học mục 7 yêu cầu giao tiếp mạng, message queue và quyền sở hữu dữ liệu riêng. ADR-003/004 và CONTRACTS định hướng PostgreSQL/RabbitMQ. README cũ mô tả SQLite và broker HTTP, trùng với một phần mã TV1.

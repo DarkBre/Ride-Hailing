@@ -2,6 +2,8 @@
 
 ## Bổ sung tương thích cho bản tích hợp
 
+- `Idempotency-Key` khi tạo chuyến được định phạm vi theo hành khách. Một hành khách dùng lại key với payload khác nhận HTTP 409. Token triển khai qua Compose có `iss`, `aud`, `exp`, `role` và định danh do Identity cấp.
+
 - Gateway chuyển `GET /api/v1/drivers/available?lat=&lon=&radius_km=` sang `GET /drivers/nearby` sau xác thực Identity. Route Driver nội bộ cần `X-Internal-Key`. Tài xế tự đặt `OFFLINE` hoặc `AVAILABLE`. `RESERVED` và `BUSY` thuộc luồng hệ thống.
 - `GET /internal/candidates` trả snapshot `id`, `latitude`, `longitude`, `locationUpdatedAtMs`, `status`, `version` cho Matching. `POST /internal/reservations` nhận `{"trip_id":"<uuid>","candidates":[{"id":"<driver-uuid>","version":7}]}`, theo thứ tự ưu tiên. Mảng rỗng chỉ tra kết quả theo chuyến. Driver trả `data: null` khi chưa có reservation và hết ứng viên; nếu đã có thì trả kết quả lưu bền vững.
 - `POST /internal/reservations/confirm` yêu cầu `trip_id` và `reservation_id`, có thể kèm `driver_id`. `POST /internal/reservations/release` dùng các định danh tương tự và hỗ trợ lệnh hủy chỉ có `trip_id`. Cả hai dùng khóa coordinator. Chỉ `state: CONFIRMED` xác nhận accept hợp lệ. Hủy trước khi có reservation ghi tombstone theo chuyến.

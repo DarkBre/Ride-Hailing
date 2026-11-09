@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Release hardening:** Cô lập idempotency key theo hành khách, chặn payment failure đến trễ sửa chuyến đã kết thúc và đối chiếu command với khoản giữ tiền.
+- **Security:** Kiểm tra claim JWT và issuer/audience trong Compose, giới hạn request body, ẩn lỗi 5xx và kiểm tra token trước khi thu hồi.
+- **Pricing và nghiệm thu:** Compose lấy nguồn cung tài xế từ Driver API, giữ snapshot cước. Thêm probe load và restart RabbitMQ/Driver, tài liệu readiness và kịch bản demo.
+
 - **Audit và tích hợp mã TV1:** Khôi phục Identity, Trip, Pricing và suite TV1 từ nhánh `8758e74`. Giữ schema SQLite hiện có và bổ sung migration metadata reservation.
 - **Reservation:** Driver quản lý RESERVED, khóa `SKIP LOCKED`, CAS, confirm, release, expiry và tombstone cho chuyến hủy.
 - **Matching:** Thêm service port 8004, inbox/outbox PostgreSQL, job có lease, khôi phục reservation sau retry và Haversine theo snapshot Driver.
