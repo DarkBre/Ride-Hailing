@@ -4,10 +4,11 @@
   "private": true,
   "description": "DS03: Ride-Hailing Microservices System (Distributed Systems Course Project)",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
-    "check": "node scripts/check.js"
+    "check": "node scripts/check.js",
+    "build": "npm --prefix src/driver-service run build && npm --prefix src/matching-service run build && node --check src/identity-service/index.js && node --check src/trip-service/index.js && node --check src/payment-service/index.js && node --check src/api-gateway/index.js"
   },
   "keywords": [
     "distributed-systems",

@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const DATA_DIR = path.join(ROOT_DIR, 'data');
@@ -14,8 +15,8 @@ module.exports = {
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
 
   // Khóa bảo mật
-  JWT_SECRET: process.env.JWT_SECRET || 'dev-jwt-secret-key-ds03-2026',
-  INTERNAL_KEY: process.env.INTERNAL_KEY || 'dev-internal-service-key-ds03',
+  JWT_SECRET: process.env.JWT_SECRET || randomBytes(32).toString('hex'),
+  INTERNAL_KEY: process.env.INTERNAL_KEY || randomBytes(32).toString('hex'),
 
   // Cổng các Microservices (theo kiến trúc 9 tiến trình)
   PORTS: {
