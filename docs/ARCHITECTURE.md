@@ -1,5 +1,98 @@
 # SYSTEM ARCHITECTURE SPECIFICATION: RIDE-HAILING MICROSERVICES (DS03)
 
+## Cấu hình đang chạy
+
+Compose dùng Gateway 8080, Identity 8001, Driver 8002, Trip 8003, Matching 8004 và Payment 8005. Pricing chạy trong Trip. Identity và Trip giữ SQLite WAL trên hai volume riêng. Driver, Matching và Payment sở hữu database PostgreSQL và role đăng nhập riêng. Chỉ Gateway được publish ra host theo mặc định. Các sơ đồ và bảng phía dưới mô tả những phương án lịch sử. Xem quyết định tích hợp trong [ADR-007](DECISIONS.md#adr-007-bản-tích-hợp-postgresql--rabbitmq).
+
+```mermaid
+flowchart LR
+  Client --> Gateway
+  Gateway --> Identity
+  Gateway --> Trip
+  Gateway --> Driver
+  Gateway --> Payment
+  Trip <--> RabbitMQ
+  RabbitMQ <--> Matching
+  RabbitMQ <--> Payment
+  Matching -->|snapshot và reserve| Driver
+  Trip -->|confirm| Driver
+  Driver --> DriverDB[(driver_db)]
+  Matching --> MatchDB[(match_db)]
+  Payment --> PaymentDB[(payment_db)]
+  Identity --> Users[(SQLite Identity)]
+  Trip --> Trips[(SQLite Trip)]
+```
+
+```mermaid
+sequenceDiagram
+  participant P as Passenger
+  participant G as Gateway
+  participant T as Trip
+  participant B as RabbitMQ
+  participant M as Matching
+  participant D as Driver
+  participant W as Payment
+  P->>G: POST /api/v1/trips
+  G->>T: JWT và nội dung chuyến
+  T-->>P: REQUESTED
+  T->>B: trip.event.created
+  B->>M: Ghi inbox và matching request
+  M->>D: Snapshot rồi reserve ứng viên đã xếp hạng
+  D-->>M: HELD và expires_at
+  M->>B: trip.event.driver_matched
+  B->>T: DRIVER_ASSIGNED
+  T->>B: payment.event.hold_requested
+  B->>W: Giữ cước
+  W->>B: payment.event.hold_success
+  B->>T: CONFIRMED
+  G->>T: Driver accept
+  T->>D: Confirm đúng trip và reservation
+  D-->>T: CONFIRMED, tài xế BUSY
+  T-->>G: ACCEPTED
+```
+
+```mermaid
+sequenceDiagram
+  participant A as Matching job A
+  participant B as Matching job B
+  participant D as Driver
+  participant P as driver_db
+  par Chuyến A
+    A->>D: Reserve tài xế D1
+  and Chuyến B
+    B->>D: Reserve D1 hoặc ứng viên kế tiếp
+  end
+  D->>P: Transaction A khóa D1 và tăng version
+  D->>P: Transaction B dùng SKIP LOCKED
+  P-->>D: Chọn D2 hoặc không có hàng
+  P-->>D: Commit D1 RESERVED và reservation HELD
+  D-->>A: HELD
+  D-->>B: NO_DRIVER nếu chỉ có D1
+```
+
+Driver kiểm tra version và độ mới GPS khi giữ. TTL áp dụng cho HELD. Confirm, release và expiry cập nhật reservation cùng trạng thái tài xế trong một transaction. Driver giữ tombstone theo trip khi nhận hủy trước kết quả. Trip xử lý sự kiện đến muộn theo trạng thái và đưa lệnh giải phóng hoặc hoàn tiền vào outbox.
+
+```mermaid
+sequenceDiagram
+  participant M as Matching
+  participant D as Driver
+  participant T as Trip
+  M->>D: Reserve với trip_id và các phiên bản ứng viên
+  D-->>M: HELD, reservation_id, expires_at
+  alt Tài xế nhận trong thời hạn
+    T->>D: Confirm đúng trip và reservation
+    D-->>T: CONFIRMED, BUSY
+    T-->>M: trip.event.release_driver sau hoàn tất hoặc bù trừ
+    M->>D: Release
+    D-->>M: RELEASED, AVAILABLE
+  else Hết hạn hoặc hủy
+    D->>D: Expire HELD nếu hết hạn
+    T-->>M: trip.event.release_driver
+    M->>D: Release idempotent hoặc ghi tombstone
+    D-->>M: EXPIRED hoặc RELEASED
+  end
+```
+
 ## 1. Sơ Đồ Kiến Trúc Tổng Thể
 
 Hệ thống được thiết kế theo mô hình Microservices hướng sự kiện (Event-Driven Microservices Architecture). Các dịch vụ được chia tách theo ranh giới nghiệp vụ (Bounded Contexts) và triển khai độc lập trong các Docker containers riêng rẽ:

@@ -1,0 +1,162 @@
+name: ds03
+
+x-http-health: &http-health
+  interval: 3s
+  timeout: 3s
+  retries: 20
+  start_period: 5s
+
+x-broker-env: &broker-env
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672?heartbeat=10
+  RABBITMQ_EXCHANGE: trip.exchange
+  RABBITMQ_DLX: trip.dlx
+  RABBITMQ_DLQ: trip.dlq
+
+x-jwt-env: &jwt-env
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+  INTERNAL_KEY: ${INTERNAL_KEY:?set INTERNAL_KEY}
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD:?set DRIVER_DB_PASSWORD}
+      MATCHING_DB_PASSWORD: ${MATCHING_DB_PASSWORD:?set MATCHING_DB_PASSWORD}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?set PAYMENT_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-postgres.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      <<: *http-health
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres]
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+    healthcheck:
+      <<: *http-health
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+    restart: unless-stopped
+
+  identity:
+    build: ../src/identity-service
+    environment:
+      <<: *jwt-env
+      DATA_DIR: /app/data
+    volumes: [identity-data:/app/data]
+    healthcheck:
+      <<: *http-health
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8001/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+    restart: unless-stopped
+
+  driver:
+    build: ../src/driver-service
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: driver_service
+      POSTGRES_PASSWORD: ${DRIVER_DB_PASSWORD}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:?set DRIVER_INTERNAL_KEY}
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY:?set DRIVER_TRIP_KEY}
+      DRIVER_LOCATION_MIN_INTERVAL_MS: ${DRIVER_LOCATION_MIN_INTERVAL_MS:-1000}
+      DRIVER_LOCATION_MAX_AGE_MS: ${DRIVER_LOCATION_MAX_AGE_MS:-60000}
+      DRIVER_RESERVATION_TTL_MS: ${DRIVER_RESERVATION_TTL_MS:-30000}
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      <<: *http-health
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8002/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+    restart: unless-stopped
+
+  matching:
+    build: ../src/matching-service
+    environment:
+      <<: *broker-env
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: matching_service
+      POSTGRES_PASSWORD: ${MATCHING_DB_PASSWORD}
+      DRIVER_URL: http://driver:8002
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY}
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY}
+      MATCHING_INTERNAL_KEY: ${MATCHING_INTERNAL_KEY:?set MATCHING_INTERNAL_KEY}
+      DRIVER_LOCATION_MAX_AGE_MS: ${DRIVER_LOCATION_MAX_AGE_MS:-60000}
+      MATCHING_RADIUS_KM: ${MATCHING_RADIUS_KM:-5}
+      MATCHING_TIMEOUT_MS: ${MATCHING_TIMEOUT_MS:-30000}
+    depends_on:
+      driver: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    healthcheck:
+      <<: *http-health
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8004/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+    restart: unless-stopped
+
+  trip:
+    build:
+      context: ..
+      dockerfile: src/trip-service/Dockerfile
+    environment:
+      <<: [*jwt-env, *broker-env]
+      DATA_DIR: /app/data
+      URL_IDENTITY: http://identity:8001
+      URL_DRIVER: http://driver:8002
+      URL_MATCHING: http://matching:8004
+      URL_PAYMENT: http://payment:8005
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY}
+      PAYMENT_REQUIRED: "true"
+    volumes: [trip-data:/app/data]
+    depends_on:
+      matching: {condition: service_healthy}
+      identity: {condition: service_healthy}
+    healthcheck:
+      <<: *http-health
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8003/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+    restart: unless-stopped
+
+  payment:
+    build:
+      context: ..
+      dockerfile: src/payment-service/Dockerfile
+    environment:
+      <<: *broker-env
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: payment_service
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD}
+      IDENTITY_URL: http://identity:8001
+    depends_on:
+      trip: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    healthcheck:
+      <<: *http-health
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8005/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+    restart: unless-stopped
+
+  gateway:
+    build: ../src/api-gateway
+    environment:
+      IDENTITY_URL: http://identity:8001
+      DRIVER_URL: http://driver:8002
+      TRIP_URL: http://trip:8003
+      PAYMENT_URL: http://payment:8005
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY}
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
+    depends_on:
+      payment: {condition: service_healthy}
+      trip: {condition: service_healthy}
+    healthcheck:
+      <<: *http-health
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  rabbit-data:
+  identity-data:
+  trip-data:

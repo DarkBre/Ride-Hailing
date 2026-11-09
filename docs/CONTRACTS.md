@@ -1,5 +1,17 @@
 # CONTRACTS & SCHEMAS SPECIFICATION (DS03)
 
+## Bổ sung tương thích cho bản tích hợp
+
+- Gateway chuyển `GET /api/v1/drivers/available?lat=&lon=&radius_km=` sang `GET /drivers/nearby` sau xác thực Identity. Route Driver nội bộ cần `X-Internal-Key`. Tài xế tự đặt `OFFLINE` hoặc `AVAILABLE`. `RESERVED` và `BUSY` thuộc luồng hệ thống.
+- `GET /internal/candidates` trả snapshot `id`, `latitude`, `longitude`, `locationUpdatedAtMs`, `status`, `version` cho Matching. `POST /internal/reservations` nhận `{"trip_id":"<uuid>","candidates":[{"id":"<driver-uuid>","version":7}]}`, theo thứ tự ưu tiên. Mảng rỗng chỉ tra kết quả theo chuyến. Driver trả `data: null` khi chưa có reservation và hết ứng viên; nếu đã có thì trả kết quả lưu bền vững.
+- `POST /internal/reservations/confirm` yêu cầu `trip_id` và `reservation_id`, có thể kèm `driver_id`. `POST /internal/reservations/release` dùng các định danh tương tự và hỗ trợ lệnh hủy chỉ có `trip_id`. Cả hai dùng khóa coordinator. Chỉ `state: CONFIRMED` xác nhận accept hợp lệ. Hủy trước khi có reservation ghi tombstone theo chuyến.
+- Matching có `POST /internal/events` và `GET /internal/matches/:tripId` phục vụ adapter/test đã xác thực. Luồng Compose dùng RabbitMQ.
+- Event v1.0 giữ snake_case. `trip.event.driver_matched` thêm các trường tùy chọn `reservation_id`, `expires_at`, `driver_user_id`. `causation_id` và `aggregate_id` là metadata bổ sung. `trip.event.matching_failed` mang `trip_id` và `reason`. `trip.event.release_driver` mang `trip_id` và, nếu đã biết, `driver_id` hoặc `reservation_id`.
+- `trip.event.created` và `trip.event.release_driver` đi vào `matching.queue`. Matching thực hiện release qua API Driver. `trip.event.driver_matched`, `trip.event.matching_failed`, `payment.event.hold_success`, `payment.event.hold_failed` đi vào `trip.queue`. Payment chỉ giữ tiền khi nhận `payment.event.hold_requested` từ Trip, với `trip_id`, `passenger_id`, `driver_id`, `amount`. `payment.event.refund_requested` và `trip.event.completed` cũng đi vào `payment.queue`.
+- Top-up qua `POST /api/v1/payments/topup` nhận số nguyên VNĐ dương. Header `Idempotency-Key` được áp dụng theo tài khoản. Dùng lại khóa với số tiền khác trả 409.
+
+Schema chạy thực tế nằm trong `src/driver-service/schema.sql`, `src/matching-service/schema.sql`, `src/payment-service/schema.sql`, và `db.js` của Identity/Trip. Các schema bên dưới là bản thiết kế PostgreSQL ban đầu.
+
 Tài liệu này là **Single Source of Truth (SSOT)** về giao diện kết nối giữa các microservices, định dạng sự kiện Message Queue và cấu trúc cơ sở dữ liệu độc lập cho từng dịch vụ.
 
 ---

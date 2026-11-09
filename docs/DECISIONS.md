@@ -1,5 +1,13 @@
 # ARCHITECTURE DECISION RECORDS (ADR) - DS03
 
+## ADR-007: Bản tích hợp PostgreSQL và RabbitMQ
+
+Trạng thái **triển khai trên nhánh tích hợp, chờ nhóm review**. Port 8001–8005 và RabbitMQ theo contract gốc. Giữ SQLite WAL của Identity và Trip để tích hợp mã TV1 và dữ liệu đã có. Mỗi service PostgreSQL có role và database riêng. Gateway là entry point công khai.
+
+Driver thực hiện reserve/confirm/release vì hàng tài xế thuộc Driver. Matching giữ trạng thái công việc và event, giao tiếp với Driver qua REST. Trip giữ quyền xác thực accept và điều phối Payment theo `hold_requested` hiện có của TV1. Chuyến dùng `trip_id` ổn định để retry reservation. Expiry chỉ thu hồi HELD. Chuyển trạng thái và phát event theo mô hình at-least-once với inbox, outbox và khóa nghiệp vụ tương ứng.
+
+Tạm giữ bằng reservation có thời hạn 30 giây mặc định. GPS và bán kính là cấu hình demo. Provision hồ sơ Driver được thực hiện bởi operator vì contract đăng ký Identity hiện thiếu thông tin xe.
+
 Tài liệu này ghi lại các quyết định thiết kế kiến trúc quan trọng, lý do lựa chọn và người phê duyệt theo chuẩn quản trị dự án.
 
 ---

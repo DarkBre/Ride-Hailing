@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Audit và tích hợp mã TV1:** Khôi phục Identity, Trip, Pricing và suite TV1 từ nhánh `8758e74`. Giữ schema SQLite hiện có và bổ sung migration metadata reservation.
+- **Reservation:** Driver quản lý RESERVED, khóa `SKIP LOCKED`, CAS, confirm, release, expiry và tombstone cho chuyến hủy.
+- **Matching:** Thêm service port 8004, inbox/outbox PostgreSQL, job có lease, khôi phục reservation sau retry và Haversine theo snapshot Driver.
+- **RabbitMQ và luồng đặt xe:** Thêm publisher confirm, retry, DLQ, adapter Trip, Gateway và Payment mô phỏng với ví, hold, capture, refund.
+- **Nghiệm thu:** Thêm integration HTTP/PostgreSQL, E2E Compose, test contention, recovery và cấu hình triển khai với role database riêng.
+
 ## [0.2.0] - 2026-11-08
 ### Changed
 - **Cập nhật chính thức danh sách thành viên nhóm và phân công chi tiết**:

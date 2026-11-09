@@ -1,5 +1,12 @@
 # TEST PLAN & EVALUATION SPECIFICATION (DS03)
 
+## Bộ nghiệm thu bản tích hợp
+
+- `npm --prefix src/driver-service test` cùng `DRIVER_TEST_DATABASE_URL` kiểm tra FT-03/04, quyền JWT, rollback, rate limit, reservation và `SKIP LOCKED` trên PostgreSQL thật.
+- `npm --prefix src/matching-service test` kiểm tra Haversine và lọc/xếp hạng. `node --test tests/booking.integration.test.cjs` kiểm tra HTTP, PostgreSQL và tiến trình phục hồi với cầu nối HTTP của bộ test.
+- `node --test tests/compose.e2e.test.cjs` kiểm tra FT-06, CT-01, CT-02, luồng accept/complete, bù trừ, restart và DLQ trên Compose thực. Chạy trên project thử nghiệm riêng. Xem [hướng dẫn chạy](../README.md#kiểm-thử-và-demo).
+- `node tests/run-all-tv1.js` chạy regression Identity, Trip, Saga và Pricing.
+
 Tài liệu này xác định chiến lược kiểm thử, danh sách kịch bản test bắt buộc theo mục 9 của đặc tả đồ án, cùng phương pháp đo đạc đánh giá hiệu năng hệ thống phân tán.
 
 ---
