@@ -132,9 +132,20 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
           )
           .digest('hex');
 
-        const idempotencyKey = headers['idempotency-key'] || null;
-        if (idempotencyKey) {
-          const existing = db.get('SELECT * FROM trips WHERE idempotency_key = ?;', idempotencyKey);
+        const requestKey = headers['idempotency-key'];
+        if (requestKey !== undefined && (typeof requestKey !== 'string' || !/^[\w.-]{1,128}$/.test(requestKey))) {
+          throw Object.assign(new Error('Idempotency-Key không hợp lệ'), { status: 400, code: 'INVALID_IDEMPOTENCY_KEY' });
+        }
+        const legacyAnonymous = !caller && !passenger_id;
+        const idempotencyKey = !requestKey ? null : legacyAnonymous ? requestKey : `v2:${crypto.createHash('sha256')
+          .update(JSON.stringify([effectivePassengerId, requestKey])).digest('hex')}`;
+        const replay = () => {
+          if (!requestKey) return null;
+          const existing = legacyAnonymous
+            ? db.get(`SELECT * FROM trips WHERE idempotency_key = ?
+                AND passenger_id GLOB 'passenger_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'`, requestKey)
+            : db.get(`SELECT * FROM trips WHERE passenger_id = ?
+                AND idempotency_key IN (?, ?) LIMIT 1`, effectivePassengerId, idempotencyKey, requestKey);
           if (existing) {
             // Cùng key nhưng payload khác nhau -> Trả về 409 Conflict
             if (existing.idempotency_payload_hash && existing.idempotency_payload_hash !== currentPayloadHash) {
@@ -153,17 +164,38 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
               duplicate: true,
             };
           }
-        }
+          return null;
+        };
+        const previous = replay();
+        if (previous) return previous;
 
         // 2.4. Tính toán giá cước động (Dynamic Pricing Engine - Mục 4.4 ARCHITECTURE.md)
         // Thống kê số lượng chuyến PENDING/MATCHING trong 5 phút vừa qua làm chỉ số Demand thực tế
         const demandRow = db.get(
           `SELECT COUNT(*) as count FROM trips
            WHERE status IN ('REQUESTED', 'MATCHING')
-           AND created_at >= datetime('now', '-5 minutes');`
+           AND datetime(created_at) >= datetime('now', '-5 minutes');`
         );
         const demand = demandRow ? demandRow.count : 0;
-        const supply = 3; // Mặc định vùng hoạt động nếu Driver Service chưa kết nối trực tiếp
+        let supply = 3;
+        if (process.env.PRICING_SUPPLY_MODE === 'live') {
+          try {
+            const nearby = new URL('/drivers/nearby', config.SERVICES.driver);
+            nearby.search = new URLSearchParams({ lat: pLat, lon: pLon, radius_km: process.env.MATCHING_RADIUS_KM || '5' });
+            const response = await fetch(nearby, {
+              headers: { 'x-internal-key': process.env.DRIVER_INTERNAL_KEY || '', 'x-correlation-id': correlationId },
+              signal: AbortSignal.timeout(2000),
+            });
+            if (!response.ok) throw new Error('Driver unavailable');
+            const { data } = await response.json();
+            if (!Array.isArray(data)) throw new Error('Invalid supply response');
+            supply = data.length;
+          } catch {
+            throw Object.assign(new Error('Tạm thời không thể lấy nguồn cung tài xế'), {
+              status: 503, code: 'PRICING_SUPPLY_UNAVAILABLE',
+            });
+          }
+        }
 
         const fareResult = pricingEngine.calculateFare({
           pickup: { lat: pLat, lon: pLon },
@@ -176,7 +208,9 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
         const tripId = crypto.randomUUID();
         const now = new Date().toISOString();
 
-        db.tx(() => {
+        const concurrent = db.tx(() => {
+          const existing = replay();
+          if (existing) return existing;
           db.run(
             `INSERT INTO trips (
               id, passenger_id, pickup_latitude, pickup_longitude, pickup_address,
@@ -210,6 +244,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
             dropoff: { lat: dLat, lon: dLon },
           });
         });
+        if (concurrent) return concurrent;
 
         return {
           id: tripId,

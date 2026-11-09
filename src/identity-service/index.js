@@ -12,7 +12,8 @@ function createIdentityService(options = {}) {
   const db = initDatabase(options.dbPath || null);
   const routes = createRoutes(db);
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer({ requestTimeout: 10_000, headersTimeout: 5000 }, async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     // 1. CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -63,7 +64,16 @@ function createIdentityService(options = {}) {
     if (['POST', 'PUT', 'PATCH'].includes(method)) {
       try {
         const chunks = [];
-        for await (const chunk of req) chunks.push(chunk);
+        let bytes = 0;
+        for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+          bytes += chunk.length;
+          if (bytes > 16_384) {
+            req.resume();
+            sendJson(413, false, null, { code: 'PAYLOAD_TOO_LARGE', message: 'Payload vượt giới hạn' });
+            return;
+          }
+          chunks.push(chunk);
+        }
         const raw = Buffer.concat(chunks).toString('utf8');
         if (raw.trim().length > 0) {
           body = JSON.parse(raw);
@@ -94,8 +104,8 @@ function createIdentityService(options = {}) {
       }
     } catch (err) {
       const status = err.status || 500;
-      const code = err.code || 'INTERNAL_SERVER_ERROR';
-      const message = err.message || 'Lỗi xử lý nội bộ';
+      const code = status >= 500 ? 'INTERNAL_SERVER_ERROR' : err.code || 'REQUEST_FAILED';
+      const message = status >= 500 ? 'Lỗi xử lý nội bộ' : err.message;
 
       sendJson(status, false, null, {
         code,

@@ -27,7 +27,8 @@ function createTripService(options = {}) {
   const internalEvents = routes.find(route => route.path === '/internal/events');
   let timeoutWorker;
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer({ requestTimeout: 10_000, headersTimeout: 5000 }, async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     // 1. CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -78,7 +79,7 @@ function createTripService(options = {}) {
 
       for (let i = 0; i < routeParts.length; i++) {
         if (routeParts[i].startsWith(':')) {
-          extracted[routeParts[i].slice(1)] = decodeURIComponent(pathParts[i]);
+          extracted[routeParts[i].slice(1)] = pathParts[i];
         } else if (routeParts[i] !== pathParts[i]) {
           match = false;
           break;
@@ -112,7 +113,16 @@ function createTripService(options = {}) {
     if (['POST', 'PUT', 'PATCH'].includes(method)) {
       try {
         const chunks = [];
-        for await (const chunk of req) chunks.push(chunk);
+        let bytes = 0;
+        for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+          bytes += chunk.length;
+          if (bytes > 16_384) {
+            req.resume();
+            sendJson(413, false, null, { code: 'PAYLOAD_TOO_LARGE', message: 'Payload vượt giới hạn' });
+            return;
+          }
+          chunks.push(chunk);
+        }
         const raw = Buffer.concat(chunks).toString('utf8');
         if (raw.trim().length > 0) {
           body = JSON.parse(raw);
@@ -144,8 +154,8 @@ function createTripService(options = {}) {
       }
     } catch (err) {
       const status = err.status || 500;
-      const code = err.code || 'INTERNAL_SERVER_ERROR';
-      const message = err.message || 'Lỗi xử lý nội bộ';
+      const code = status >= 500 ? 'INTERNAL_SERVER_ERROR' : err.code || 'REQUEST_FAILED';
+      const message = status >= 500 ? 'Lỗi xử lý nội bộ' : err.message;
 
       sendJson(status, false, null, {
         code,

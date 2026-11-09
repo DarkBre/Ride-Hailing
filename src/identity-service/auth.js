@@ -60,7 +60,8 @@ function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
   const iat = Math.floor(Date.now() / 1000);
   const jti = crypto.randomUUID();
 
-  const fullPayload = { ...payload, iat, exp, jti };
+  const fullPayload = { ...payload, iat, exp, jti,
+    iss: process.env.JWT_ISSUER || undefined, aud: process.env.JWT_AUDIENCE || undefined };
 
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
@@ -93,7 +94,9 @@ function verifyToken(token, db = null) {
         tokenBlacklist.add(token);
         return null;
       }
-    } catch (_) {}
+    } catch (_) {
+      return null;
+    }
   }
 
   const parts = token.split('.');
@@ -123,9 +126,14 @@ function verifyToken(token, db = null) {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      return null; // Hết hạn
+    const now = Date.now() / 1000;
+    if (JSON.parse(base64UrlDecode(encodedHeader)).alg !== 'HS256' ||
+        !Number.isFinite(payload.exp) || payload.exp <= now ||
+        typeof payload.userId !== 'string' || !payload.userId ||
+        !['DRIVER', 'PASSENGER'].includes(payload.role) ||
+        (process.env.JWT_ISSUER && payload.iss !== process.env.JWT_ISSUER) ||
+        (process.env.JWT_AUDIENCE && payload.aud !== process.env.JWT_AUDIENCE)) {
+      return null;
     }
     return payload;
   } catch (_) {

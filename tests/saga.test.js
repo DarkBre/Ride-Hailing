@@ -231,6 +231,16 @@ async function runTests() {
       assert.strictEqual(res.body.data.action, 'COMPENSATED');
       assert.strictEqual(res.body.data.releasedDriverId, 'driver_d02');
 
+      service.db.run("UPDATE trips SET status = 'COMPLETED' WHERE id = ?", failedTripId);
+      service.db.run("UPDATE saga_instances SET status = 'HOLDING_PAYMENT' WHERE trip_id = ?", failedTripId);
+      const late = service.sagaCoordinator.handlePaymentHoldFailed({
+        eventId: 'late_hold_failure_completed', tripId: failedTripId, driverId: 'driver_d02',
+      });
+      assert.strictEqual(late.action, 'STALE_PAYMENT_FAILURE_IGNORED');
+      assert.strictEqual(service.db.get('SELECT status FROM trips WHERE id = ?', failedTripId).status, 'COMPLETED');
+      service.db.run("UPDATE trips SET status = 'CANCELLED' WHERE id = ?", failedTripId);
+      service.db.run("UPDATE saga_instances SET status = 'COMPENSATED' WHERE trip_id = ?", failedTripId);
+
       // 1. Kiểm tra trạng thái chuyến đi: CANCELLED
       const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', failedTripId);
       assert.strictEqual(trip.status, 'CANCELLED');

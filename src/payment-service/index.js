@@ -44,6 +44,11 @@ async function handlePayment(pool, event) {
     if (!seen.rowCount) return;
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text, 0))', [p.trip_id]);
     const { rows: [hold] } = await db.query('SELECT * FROM payment_holds WHERE trip_id = $1', [p.trip_id]);
+    const statedAmount = holding || refunding ? p.amount : p.fare;
+    if (hold?.user_id && ((p.passenger_id && p.passenger_id !== hold.user_id) ||
+        (statedAmount !== undefined && statedAmount !== Number(hold.amount)))) {
+      throw new Error('Payment command does not match the recorded hold');
+    }
     if (holding && !hold) {
       const debit = await db.query(`UPDATE wallets SET balance = balance - $2, held_balance = held_balance + $2
         WHERE user_id = $1 AND balance >= $2`, [p.passenger_id, p.amount]);

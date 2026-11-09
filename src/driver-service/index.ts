@@ -31,6 +31,8 @@ function driverIdentity(req: IncomingMessage, jwtSecret: string): string {
     if (JSON.parse(Buffer.from(header, 'base64url').toString()).alg !== 'HS256') throw new Error();
     claims = JSON.parse(Buffer.from(body, 'base64url').toString());
     if (!Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) throw new Error();
+    if ((process.env.JWT_ISSUER && claims.iss !== process.env.JWT_ISSUER) ||
+        (process.env.JWT_AUDIENCE && claims.aud !== process.env.JWT_AUDIENCE)) throw new Error();
   } catch {
     throw new HttpError(401, 'UNAUTHORIZED', 'Yêu cầu JWT hợp lệ');
   }

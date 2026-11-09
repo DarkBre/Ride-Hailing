@@ -390,6 +390,20 @@ async function runTests() {
       assert.strictEqual(resA_Read.body.data.passenger_id, 'passenger_A');
     });
 
+    await test('Idempotency keys are isolated per passenger', async () => {
+      const body = { pickup_latitude: 21.02, pickup_longitude: 105.85, pickup_address: 'A',
+        dropoff_latitude: 21.05, dropoff_longitude: 105.82, dropoff_address: 'B' };
+      const book = userId => makeRequest({ method: 'POST', path: '/trips', body,
+        headers: { Authorization: `Bearer ${signToken({ userId, role: 'PASSENGER' })}`,
+          'Idempotency-Key': 'shared-client-key' } });
+      const first = await book('passenger_A');
+      const second = await book('passenger_B');
+      assert.strictEqual(first.status, 201);
+      assert.strictEqual(second.status, 201);
+      assert.notStrictEqual(first.body.data.id, second.body.data.id);
+      assert.strictEqual((await book('passenger_A')).body.data.id, first.body.data.id);
+    });
+
     await test('Section 6.1: Driver Y không được phép nhận chuyến xe đã gán cho Driver X (HTTP 403)', async () => {
       // Giả lập chuyến đã gán driver_X
       const tripAssigned = service.db.get("SELECT id FROM trips WHERE status = 'REQUESTED' LIMIT 1;");

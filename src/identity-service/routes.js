@@ -193,7 +193,7 @@ function createRoutes(db) {
       handler: async ({ headers }) => {
         const authHeader = headers['authorization'] || '';
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-        if (token) {
+        if (token && auth.verifyToken(token, db)) {
           auth.revokeToken(token, db);
         }
         return { message: 'Đăng xuất thành công' };

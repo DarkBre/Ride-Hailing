@@ -41,8 +41,13 @@ function verifyToken(token) {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
+    const now = Date.now() / 1000;
+    if (JSON.parse(base64UrlDecode(encodedHeader)).alg !== 'HS256' ||
+        !Number.isFinite(payload.exp) || payload.exp <= now ||
+        typeof payload.userId !== 'string' || !payload.userId ||
+        !['DRIVER', 'PASSENGER'].includes(payload.role) ||
+        (process.env.JWT_ISSUER && payload.iss !== process.env.JWT_ISSUER) ||
+        (process.env.JWT_AUDIENCE && payload.aud !== process.env.JWT_AUDIENCE)) {
       return null;
     }
     return payload;

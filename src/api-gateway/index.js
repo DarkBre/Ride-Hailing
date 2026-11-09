@@ -10,6 +10,8 @@ function gateway({ identity, driver, trip, payment, driverKey }) {
     const supplied = req.headers['x-correlation-id'];
     const trace = typeof supplied === 'string' && /^[\w.-]{1,100}$/.test(supplied) ? supplied : randomUUID();
     res.setHeader('x-correlation-id', trace);
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.setHeader('cache-control', 'no-store');
     function reply(status, code) {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ success: status < 400, error: code ? { code } : null, meta: { correlation_id: trace } }));

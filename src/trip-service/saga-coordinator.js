@@ -322,8 +322,13 @@ class SagaCoordinator {
       return { action: 'ALREADY_COMPENSATED' };
     }
 
-    const trip = this.db.get('SELECT driver_id FROM trips WHERE id = ?;', tripId);
-    const assignedDriverId = driverId || (trip ? trip.driver_id : null);
+    const trip = this.db.get('SELECT status, driver_id, reservation_id FROM trips WHERE id = ?;', tripId);
+    if (!trip || !['DRIVER_ASSIGNED', 'ACCEPTED', 'IN_PROGRESS'].includes(trip.status) ||
+        saga.status !== SAGA_STATUS.HOLDING_PAYMENT || (driverId && driverId !== trip.driver_id)) {
+      this.markEventProcessed(eventId, 'payment.event.hold_failed');
+      return { action: 'STALE_PAYMENT_FAILURE_IGNORED', tripId };
+    }
+    const assignedDriverId = trip.driver_id;
     const now = new Date().toISOString();
     const corrId = correlationId || saga.correlation_id;
 
@@ -358,6 +363,7 @@ class SagaCoordinator {
           payload: {
             trip_id: tripId,
             driver_id: assignedDriverId,
+            reservation_id: trip.reservation_id || undefined,
             reason: 'SAGA_COMPENSATION_PAYMENT_FAILED',
           },
           correlationId: corrId,
