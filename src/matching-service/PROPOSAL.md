@@ -1,6 +1,6 @@
 # Đề xuất ADR TV2 — Quyền giữ tài xế và giao thức tích hợp
 
-Trạng thái **chờ TV1/TV3 xác nhận**. Các giao diện bên dưới là ví dụ để review.
+Trạng thái **đã triển khai phương án tương thích trên nhánh tích hợp, chờ TV1/TV3 review**. Phần dưới ghi lại đề xuất trước khi triển khai. Giao diện chạy thực tế được ghi tại [CONTRACTS](../../docs/CONTRACTS.md#bổ-sung-tương-thích-cho-bản-tích-hợp) và [ADR-007](../../docs/DECISIONS.md#adr-007-bản-tích-hợp-postgresql--rabbitmq).
 
 ## Xung đột và quyết định cần chốt
 
