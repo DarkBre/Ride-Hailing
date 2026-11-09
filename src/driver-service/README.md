@@ -2,7 +2,7 @@
 
 Driver chạy ở port 8002 theo mặc định và kết nối PostgreSQL `driver_db`. Môi trường cần Node.js 20+, npm, một database riêng đã được provision và role Driver có quyền chạy schema khi khởi động.
 
-Biến cần cấu hình qua môi trường gồm `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `DRIVER_INTERNAL_KEY`, `DRIVER_LOCATION_MIN_INTERVAL_MS` và `DRIVER_LOCATION_MAX_AGE_MS`. Hai biến GPS là số nguyên dương tính theo mili giây. Hệ thống yêu cầu cấu hình tường minh vì tài liệu chưa chốt hai giá trị này. Có thể đặt thêm `POSTGRES_PORT`, `DRIVER_DB_NAME` và `DRIVER_SERVICE_PORT`.
+Biến cần cấu hình qua môi trường gồm `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `DRIVER_INTERNAL_KEY`, `DRIVER_TRIP_KEY`, `DRIVER_LOCATION_MIN_INTERVAL_MS` và `DRIVER_LOCATION_MAX_AGE_MS`. Các biến GPS tính theo mili giây. Có thể đặt thêm `POSTGRES_PORT`, `DRIVER_DB_NAME`, `DRIVER_SERVICE_PORT` và `DRIVER_RESERVATION_TTL_MS` (mặc định 30000).
 
 ```sh
 npm --prefix src/driver-service install
@@ -14,8 +14,9 @@ docker build -t ds03-driver src/driver-service
 Container dùng cùng các biến môi trường. Cấu hình mạng riêng để kết nối PostgreSQL và giữ thông tin xác thực ngoài Git.
 
 - `PUT /drivers/location` dùng JWT vai trò `DRIVER` và trường JSON `latitude`, `longitude`. Lần ghi vượt tần suất trả HTTP 429.
-- `PUT /drivers/status` cho chủ hồ sơ đổi giữa `OFFLINE` và `AVAILABLE`. Luồng gán chuyến sở hữu quyền thay đổi `BUSY`.
+- `PUT /drivers/status` cho chủ hồ sơ đổi giữa `OFFLINE` và `AVAILABLE`. Luồng gán chuyến sở hữu quyền thay đổi `RESERVED` và `BUSY`.
 - `GET /drivers/nearby?lat=0&lon=0&radius_km=5` dùng `X-Internal-Key` và chỉ trả ID cùng khoảng cách km của các tài xế khả dụng có GPS còn hạn.
+- `GET /internal/candidates` và `POST /internal/reservations` dành cho Matching. Các thao tác `confirm` và `release` dùng khóa coordinator riêng. [Contract tích hợp](../../docs/CONTRACTS.md#bổ-sung-tương-thích-cho-bản-tích-hợp)
 
 Provision hồ sơ thử nghiệm bằng SQL với UUID người dùng khớp JWT do Identity ký. Ví dụ chỉ dùng dữ liệu giả lập:
 

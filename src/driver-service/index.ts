@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer, IncomingMessage } from 'node:http';
 import { resolve } from 'node:path';
 import { Pool } from 'pg';
+import { expireReservations, reserve, transition } from './reservations';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const driverFields = 'id, latitude, longitude, status, updated_at, location_updated_at';
@@ -76,6 +77,8 @@ interface Settings {
   internalKey: string;
   locationMinIntervalMs: number;
   locationMaxAgeMs: number;
+  reservationTtlMs?: number;
+  tripKey?: string;
 }
 
 export function driverServer(pool: Pool, settings: Settings) {
@@ -91,6 +94,60 @@ export function driverServer(pool: Pool, settings: Settings) {
     };
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
+      if (req.method === 'GET' && url.pathname === '/health') {
+        await pool.query('SELECT 1');
+        return send(200, { status: 'ready' });
+      }
+      if (url.pathname.startsWith('/internal/')) {
+        const key = req.headers['x-internal-key'];
+        const path = url.pathname;
+        const action = path.match(/^\/internal\/reservations\/(confirm|release)$/)?.[1];
+        const expectedKey = action ? settings.tripKey : settings.internalKey;
+        if (!expectedKey || typeof key !== 'string' || !equal(key, expectedKey)) {
+          throw new HttpError(401, 'UNAUTHORIZED', 'Yêu cầu xác thực service');
+        }
+        if (req.method === 'GET' && path === '/internal/candidates') {
+          const { rows } = await pool.query(`
+            SELECT id, latitude, longitude, version, status,
+              extract(epoch FROM location_updated_at)::float8 * 1000 AS "locationUpdatedAtMs"
+            FROM drivers WHERE status = 'AVAILABLE'
+              AND latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180
+              AND location_updated_at >= statement_timestamp() - $1::float8 * interval '1 millisecond'`,
+          [settings.locationMaxAgeMs]);
+          return send(200, rows);
+        }
+        if (req.method === 'POST' && (path === '/internal/reservations' || action)) {
+          const body = await jsonBody(req);
+          const tripId = body.trip_id;
+          const validId = (value: unknown): value is string => typeof value === 'string' && uuid.test(value);
+          if (!validId(tripId)) throw new HttpError(400, 'INVALID_TRIP', 'trip_id không hợp lệ');
+          if (action === 'confirm' || action === 'release') {
+            const reservationId = body.reservation_id;
+            const driverId = body.driver_id;
+            if ((action === 'confirm' && !validId(reservationId)) ||
+                (reservationId !== undefined && !validId(reservationId)) ||
+                (driverId !== undefined && !validId(driverId))) {
+              throw new HttpError(400, 'INVALID_RESERVATION', 'Định danh reservation không hợp lệ');
+            }
+            const result = await transition(pool, tripId, action, reservationId, driverId);
+            if (!result) throw new HttpError(404, 'RESERVATION_NOT_FOUND', 'Không tìm thấy reservation của chuyến');
+            return send(200, result);
+          }
+          const candidates = body.candidates;
+          if (!Array.isArray(candidates) || candidates.length > 50 ||
+              candidates.some(candidate => !validId(candidate?.id) ||
+                !Number.isInteger(candidate.version) || candidate.version < 1 || candidate.version > 2147483647)) {
+            throw new HttpError(400, 'INVALID_CANDIDATES', 'Danh sách ứng viên không hợp lệ');
+          }
+          const result = await reserve(pool, tripId, candidates, settings.locationMaxAgeMs,
+            settings.reservationTtlMs ?? 30_000);
+          console.info(JSON.stringify({
+            service: 'driver-service', event: 'reservation', timestamp: new Date().toISOString(),
+            correlation_id: correlationId, trip_id: tripId, result: result?.state ?? 'NO_DRIVER',
+          }));
+          return send(200, result);
+        }
+      }
       if (req.method === 'GET' && url.pathname === '/drivers/nearby') {
         const key = req.headers['x-internal-key'];
         if (typeof key !== 'string' || !equal(key, settings.internalKey)) {
@@ -130,7 +187,9 @@ export function driverServer(pool: Pool, settings: Settings) {
           throw new HttpError(400, 'INVALID_LOCATION', 'Tọa độ không hợp lệ');
         }
       } else {
-        if (body.status === 'BUSY') throw new HttpError(403, 'FORBIDDEN', 'BUSY do luồng gán chuyến quản lý');
+        if (body.status === 'BUSY' || body.status === 'RESERVED') {
+          throw new HttpError(403, 'FORBIDDEN', 'Trạng thái do luồng gán chuyến quản lý');
+        }
         if (body.status !== 'OFFLINE' && body.status !== 'AVAILABLE') {
           throw new HttpError(400, 'INVALID_STATUS', 'Trạng thái không hợp lệ');
         }
@@ -144,7 +203,7 @@ export function driverServer(pool: Pool, settings: Settings) {
         );
         if (!current.rowCount) throw new HttpError(404, 'DRIVER_NOT_FOUND', 'Không tìm thấy hồ sơ tài xế');
         const { id, status, version } = current.rows[0];
-        if (!updatingLocation && status === 'BUSY') {
+        if (!updatingLocation && (status === 'BUSY' || status === 'RESERVED')) {
           throw new HttpError(409, 'DRIVER_ALREADY_BUSY', 'Tài xế đang được gán chuyến');
         }
         const result = updatingLocation
@@ -203,6 +262,8 @@ async function start() {
   const settings = {
     jwtSecret: required('JWT_SECRET'),
     internalKey: required('DRIVER_INTERNAL_KEY'),
+    tripKey: required('DRIVER_TRIP_KEY'),
+    reservationTtlMs: positiveInt('DRIVER_RESERVATION_TTL_MS', 30_000),
     locationMinIntervalMs: positiveInt('DRIVER_LOCATION_MIN_INTERVAL_MS'),
     locationMaxAgeMs: positiveInt('DRIVER_LOCATION_MAX_AGE_MS'),
   };
@@ -219,9 +280,16 @@ async function start() {
   try {
     await pool.query(await readFile(resolve(__dirname, '../schema.sql'), 'utf8'));
     const server = driverServer(pool, settings);
+    const expiryWorker = setInterval(() => {
+      void expireReservations(pool).catch(() => console.error('driver-service: expiry failed'));
+    }, 1000);
+    expiryWorker.unref();
     server.listen(port, () => console.log(`driver-service listening on ${port}`));
     for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-      process.once(signal, () => server.close(() => void pool.end()));
+      process.once(signal, () => {
+        clearInterval(expiryWorker);
+        server.close(() => void pool.end());
+      });
     }
   } catch {
     await pool.end();

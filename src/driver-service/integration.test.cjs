@@ -6,6 +6,7 @@ const { join } = require('node:path');
 const { test } = require('node:test');
 const { Pool } = require('pg');
 const { driverServer } = require('./dist/index.js');
+const { expireReservations } = require('./dist/reservations.js');
 
 test('Driver HTTP + PostgreSQL', { skip: !process.env.DRIVER_TEST_DATABASE_URL }, async t => {
   const connectionString = process.env.DRIVER_TEST_DATABASE_URL;
@@ -16,6 +17,7 @@ test('Driver HTTP + PostgreSQL', { skip: !process.env.DRIVER_TEST_DATABASE_URL }
   const settings = {
     jwtSecret: randomBytes(32).toString('hex'),
     internalKey: randomBytes(32).toString('hex'),
+    tripKey: randomBytes(32).toString('hex'),
     locationMinIntervalMs: 10_000,
     locationMaxAgeMs: 60_000,
   };
@@ -114,5 +116,69 @@ test('Driver HTTP + PostgreSQL', { skip: !process.env.DRIVER_TEST_DATABASE_URL }
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error.code, 'SERVICE_UNAVAILABLE');
     assert.deepEqual(await row(userId), before);
+    await pool.query('ALTER TABLE drivers DROP CONSTRAINT test_offline_guard');
+  });
+
+  await t.test('reservation contention, retry, wrong owner, confirm, release and expiry', async () => {
+    const call = async (suffix, payload, key = settings.internalKey) => {
+      const response = await fetch(`${base}/internal/reservations${suffix}`, {
+        method: 'POST', headers: { 'x-internal-key': key }, body: JSON.stringify(payload),
+      });
+      return { status: response.status, data: (await response.json()).data };
+    };
+    const snapshot = async () => {
+      const current = await row(userId);
+      return [{ id: current.id, version: current.version }];
+    };
+    const candidates = await snapshot();
+    const trips = [randomUUID(), randomUUID()];
+    const outcomes = await Promise.all(trips.map(trip_id => call('', { trip_id, candidates })));
+    assert.equal(outcomes.filter(result => result.data?.state === 'HELD').length, 1);
+    const winner = outcomes.find(result => result.data).data;
+    const command = { trip_id: winner.trip_id, reservation_id: winner.id, driver_id: winner.driver_id };
+    assert.equal((await row(userId)).status, 'RESERVED');
+    assert.equal((await put('status', { status: 'AVAILABLE' })).status, 409);
+    const retry = () => call('', { trip_id: winner.trip_id, candidates });
+    assert.deepEqual((await Promise.all([retry(), retry()])).map(result => result.data.id), [winner.id, winner.id]);
+    assert.equal((await call('/confirm', command)).status, 401);
+    assert.equal((await call('/release', { ...command, reservation_id: randomUUID() }, settings.tripKey)).status, 404);
+    assert.equal((await call('/confirm', command, settings.tripKey)).data.state, 'CONFIRMED');
+    assert.equal((await call('/confirm', command, settings.tripKey)).data.state, 'CONFIRMED');
+    assert.equal((await row(userId)).status, 'BUSY');
+    await pool.query("UPDATE driver_reservations SET expires_at = NOW() - interval '1 second' WHERE id = $1", [winner.id]);
+    assert.equal(await expireReservations(pool), 0);
+    assert.equal((await call('/release', command, settings.tripKey)).data.state, 'RELEASED');
+    assert.equal((await call('/release', command, settings.tripKey)).data.state, 'RELEASED');
+    assert.equal((await row(userId)).status, 'AVAILABLE');
+    const late = await call('', { trip_id: randomUUID(), candidates: await snapshot() });
+    await pool.query("UPDATE driver_reservations SET expires_at = NOW() - interval '1 second' WHERE id = $1", [late.data.id]);
+    assert.equal(await expireReservations(pool), 1);
+    assert.equal((await call('/confirm', {
+      trip_id: late.data.trip_id, reservation_id: late.data.id,
+    }, settings.tripKey)).data.state, 'EXPIRED');
+    const cancelled = { trip_id: randomUUID() };
+    assert.equal((await call('/release', cancelled, settings.tripKey)).data.state, 'RELEASED');
+    assert.equal((await call('', { ...cancelled, candidates: await snapshot() })).data.state, 'RELEASED');
+    assert.equal((await row(userId)).status, 'AVAILABLE');
+  });
+
+  await t.test('SKIP LOCKED chooses the next ranked candidate while the first row is locked', async () => {
+    await pool.query("UPDATE drivers SET status = 'AVAILABLE' WHERE user_id = $1", [otherId]);
+    const candidates = [await row(userId), await row(otherId)].map(({ id, version }) => ({ id, version }));
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT id FROM drivers WHERE id = $1 FOR UPDATE', [candidates[0].id]);
+      const response = await fetch(`${base}/internal/reservations`, {
+        method: 'POST', headers: { 'x-internal-key': settings.internalKey },
+        body: JSON.stringify({ trip_id: randomUUID(), candidates }),
+        signal: AbortSignal.timeout(2000),
+      });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).data.driver_id, candidates[1].id);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
   });
 });
