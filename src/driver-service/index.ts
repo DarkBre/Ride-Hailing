@@ -1,0 +1,237 @@
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { createServer, IncomingMessage } from 'node:http';
+import { resolve } from 'node:path';
+import { Pool } from 'pg';
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const driverFields = 'id, latitude, longitude, status, updated_at, location_updated_at';
+
+class HttpError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string) {
+    super(message);
+  }
+}
+
+function equal(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function driverIdentity(req: IncomingMessage, jwtSecret: string): string {
+  const token = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i);
+  if (!token) throw new HttpError(401, 'UNAUTHORIZED', 'Yêu cầu JWT hợp lệ');
+  const [header, body, signature] = token[1].split('.');
+  let claims;
+  try {
+    const expected = createHmac('sha256', jwtSecret).update(`${header}.${body}`).digest('base64url');
+    if (!equal(signature, expected)) throw new Error();
+    if (JSON.parse(Buffer.from(header, 'base64url').toString()).alg !== 'HS256') throw new Error();
+    claims = JSON.parse(Buffer.from(body, 'base64url').toString());
+    if (!Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) throw new Error();
+  } catch {
+    throw new HttpError(401, 'UNAUTHORIZED', 'Yêu cầu JWT hợp lệ');
+  }
+  if (claims.role !== 'DRIVER') throw new HttpError(403, 'FORBIDDEN', 'Yêu cầu vai trò DRIVER');
+  const userId = claims.user_id ?? claims.userId;
+  if (typeof userId !== 'string' || !uuid.test(userId) ||
+      (claims.user_id && claims.userId && claims.user_id !== claims.userId)) {
+    throw new HttpError(401, 'UNAUTHORIZED', 'JWT thiếu định danh hợp lệ');
+  }
+  return userId;
+}
+
+async function jsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+    length += chunk.length;
+    if (length > 4096) {
+      req.resume();
+      throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'Payload vượt giới hạn');
+    }
+    chunks.push(chunk);
+  }
+  try {
+    const result = JSON.parse(Buffer.concat(chunks).toString());
+    if (result && typeof result === 'object' && !Array.isArray(result)) return result;
+  } catch {
+    // Return the same response for malformed JSON and unsupported payload shapes.
+  }
+  throw new HttpError(400, 'INVALID_BODY', 'Yêu cầu JSON object');
+}
+
+function coordinate(value: unknown, limit: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit;
+}
+
+function queryNumber(url: URL, name: string): number {
+  const value = url.searchParams.get(name);
+  return value?.trim() ? Number(value) : NaN;
+}
+
+interface Settings {
+  jwtSecret: string;
+  internalKey: string;
+  locationMinIntervalMs: number;
+  locationMaxAgeMs: number;
+}
+
+export function driverServer(pool: Pool, settings: Settings) {
+  return createServer({ requestTimeout: 10_000, headersTimeout: 5_000 }, async (req, res) => {
+    const suppliedId = req.headers['x-correlation-id'];
+    const correlationId = typeof suppliedId === 'string' && /^[\w.-]{1,100}$/.test(suppliedId)
+      ? suppliedId : randomUUID();
+    const send = (status: number, data: unknown, error: { code: string; message: string } | null = null) => {
+      res.writeHead(status, { 'content-type': 'application/json', 'x-correlation-id': correlationId });
+      res.end(JSON.stringify({
+        success: !error, data, error, meta: { correlation_id: correlationId, timestamp: new Date().toISOString() },
+      }));
+    };
+    try {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (req.method === 'GET' && url.pathname === '/drivers/nearby') {
+        const key = req.headers['x-internal-key'];
+        if (typeof key !== 'string' || !equal(key, settings.internalKey)) {
+          throw new HttpError(401, 'UNAUTHORIZED', 'Yêu cầu xác thực service');
+        }
+        const latitude = queryNumber(url, 'lat');
+        const longitude = queryNumber(url, 'lon');
+        const radius = queryNumber(url, 'radius_km');
+        if (!coordinate(latitude, 90) || !coordinate(longitude, 180) || !Number.isFinite(radius) || radius <= 0) {
+          throw new HttpError(400, 'INVALID_LOCATION', 'Tọa độ hoặc bán kính không hợp lệ');
+        }
+        // This read-only projection satisfies the nearby contract. It grants no assignment.
+        const { rows } = await pool.query(`
+          SELECT id, distance_km FROM (
+            SELECT id, 12742 * asin(sqrt(least(1.0, greatest(0.0,
+              power(sin(radians(latitude - $1::float8) / 2), 2)
+              + cos(radians($1::float8)) * cos(radians(latitude))
+              * power(sin(radians(longitude - $2::float8) / 2), 2)
+            )))) AS distance_km
+            FROM drivers
+            WHERE status = 'AVAILABLE'
+              AND latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180
+              AND location_updated_at >= statement_timestamp() - $4::float8 * interval '1 millisecond'
+          ) AS nearby
+          WHERE distance_km <= $3
+          ORDER BY distance_km, id`, [latitude, longitude, radius, settings.locationMaxAgeMs]);
+        return send(200, rows);
+      }
+      if (req.method !== 'PUT' || !['/drivers/location', '/drivers/status'].includes(url.pathname)) {
+        throw new HttpError(404, 'NOT_FOUND', 'Không tìm thấy API');
+      }
+      const userId = driverIdentity(req, settings.jwtSecret);
+      const body = await jsonBody(req);
+      const updatingLocation = url.pathname === '/drivers/location';
+      if (updatingLocation) {
+        if (!coordinate(body.latitude, 90) || !coordinate(body.longitude, 180)) {
+          throw new HttpError(400, 'INVALID_LOCATION', 'Tọa độ không hợp lệ');
+        }
+      } else {
+        if (body.status === 'BUSY') throw new HttpError(403, 'FORBIDDEN', 'BUSY do luồng gán chuyến quản lý');
+        if (body.status !== 'OFFLINE' && body.status !== 'AVAILABLE') {
+          throw new HttpError(400, 'INVALID_STATUS', 'Trạng thái không hợp lệ');
+        }
+      }
+      const client = await pool.connect();
+      let discard = false;
+      try {
+        await client.query('BEGIN');
+        const current = await client.query(
+          'SELECT id, status, version FROM drivers WHERE user_id = $1 FOR UPDATE', [userId],
+        );
+        if (!current.rowCount) throw new HttpError(404, 'DRIVER_NOT_FOUND', 'Không tìm thấy hồ sơ tài xế');
+        const { id, status, version } = current.rows[0];
+        if (!updatingLocation && status === 'BUSY') {
+          throw new HttpError(409, 'DRIVER_ALREADY_BUSY', 'Tài xế đang được gán chuyến');
+        }
+        const result = updatingLocation
+          ? await client.query(`
+              UPDATE drivers SET latitude = $3, longitude = $4,
+                location_updated_at = statement_timestamp(), updated_at = statement_timestamp(), version = version + 1
+              WHERE id = $1 AND version = $2 AND (
+                location_updated_at IS NULL OR
+                location_updated_at <= statement_timestamp() - $5::float8 * interval '1 millisecond'
+              )
+              RETURNING ${driverFields}`, [id, version, body.latitude, body.longitude, settings.locationMinIntervalMs])
+          : await client.query(`
+              UPDATE drivers SET status = $3, updated_at = statement_timestamp(), version = version + 1
+              WHERE id = $1 AND version = $2 RETURNING ${driverFields}`, [id, version, body.status]);
+        if (result.rowCount !== 1) {
+          if (updatingLocation) {
+            res.setHeader('retry-after', Math.ceil(settings.locationMinIntervalMs / 1000));
+            throw new HttpError(429, 'LOCATION_RATE_LIMIT', 'Cập nhật vị trí quá thường xuyên');
+          }
+          throw new HttpError(409, 'VERSION_CONFLICT', 'Hồ sơ tài xế vừa thay đổi');
+        }
+        await client.query('COMMIT');
+        return send(200, result.rows[0]);
+      } catch (error) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          discard = true;
+        }
+        throw error;
+      } finally {
+        client.release(discard);
+      }
+    } catch (error) {
+      if (error instanceof HttpError) return send(error.status, null, { code: error.code, message: error.message });
+      console.error(JSON.stringify({ service: 'driver-service', event: 'request_failed', correlation_id: correlationId }));
+      return send(503, null, { code: 'SERVICE_UNAVAILABLE', message: 'Driver Service tạm thời không khả dụng' });
+    }
+  });
+}
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value?.trim()) throw new Error(`Missing configuration ${name}`);
+  return value;
+}
+
+function positiveInt(name: string, fallback?: number): number {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`Invalid configuration ${name}`);
+  return value;
+}
+
+async function start() {
+  const port = positiveInt('DRIVER_SERVICE_PORT', 8002);
+  const settings = {
+    jwtSecret: required('JWT_SECRET'),
+    internalKey: required('DRIVER_INTERNAL_KEY'),
+    locationMinIntervalMs: positiveInt('DRIVER_LOCATION_MIN_INTERVAL_MS'),
+    locationMaxAgeMs: positiveInt('DRIVER_LOCATION_MAX_AGE_MS'),
+  };
+  const pool = new Pool({
+    database: process.env.DRIVER_DB_NAME ?? 'driver_db',
+    host: required('POSTGRES_HOST'),
+    port: positiveInt('POSTGRES_PORT', 5432),
+    user: required('POSTGRES_USER'),
+    password: required('POSTGRES_PASSWORD'),
+    connectionTimeoutMillis: 3000,
+    statement_timeout: 5000,
+  });
+  pool.on('error', () => console.error('driver-service: PostgreSQL idle connection lost'));
+  try {
+    await pool.query(await readFile(resolve(__dirname, '../schema.sql'), 'utf8'));
+    const server = driverServer(pool, settings);
+    server.listen(port, () => console.log(`driver-service listening on ${port}`));
+    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+      process.once(signal, () => server.close(() => void pool.end()));
+    }
+  } catch {
+    await pool.end();
+    throw new Error('Driver database initialization failed');
+  }
+}
+
+if (require.main === module) {
+  start().catch(() => {
+    console.error('driver-service: startup failed');
+    process.exitCode = 1;
+  });
+}
