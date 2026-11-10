@@ -2,7 +2,7 @@
 ## CHƯƠNG 10 – 14: HẠ TẦNG THÔNG ĐIỆP, OUTBOX, GATEWAY & KHẢ NĂNG CHỊU LỖI
 
 **Thành viên:** TV3 (Quang)  
-**Phạm vi sở hữu:** Simulated Payment Service (:8005), API Gateway (:8080), Web Simulation Dashboard (:3000), RabbitMQ Infrastructure, DLQ & Bounded Retries, Transactional Outbox, Distributed Tracing (`X-Correlation-ID`), Kiểm thử FT-07, FR-01, FR-02 và Load/Performance Experiment.  
+**Phạm vi sở hữu:** Simulated Payment Service (:8005), API Gateway (:8080), Web Simulation Dashboard (:3000), RabbitMQ Infrastructure, DLQ & Bounded Retries, Transactional Outbox, Distributed Tracing (`X-Correlation-ID`), Kiểm thử FT-07, FR-01, FR-02, DLQ/Gateway Tests và Load/Performance Experiment.  
 **Môn học:** Hệ phân tán (Distributed Systems) — Học kỳ I, 2026.
 
 ---
@@ -32,7 +32,7 @@ Toàn bộ topology được TV3 thiết lập tập trung tại `deploy/rabbitm
 └────────┬────────┘             └────────┬────────┘             │ (durable, DLX)  │             └────────┬────────┘
          │                               │                      └────────┬────────┘                      │
          └───────────────────────────────┼───────────────────────────────┴───────────────────────────────┘
-                                         ▼ (Khi Nack / Quá số lần Retry)
+                                         ▼ (Khi Nack / Quá số lần Retry / Poison Message)
                                   [ trip.dlx ] (Dead-Letter Exchange, Topic)
                                          │
                                          ▼ (Routing key: #)
@@ -47,7 +47,7 @@ Toàn bộ topology được TV3 thiết lập tập trung tại `deploy/rabbitm
 | `trip.exchange` | Topic Exchange | `durable: true` | Không | Tiếp nhận mọi domain events từ các microservices |
 | `trip.dlx` | Topic Exchange | `durable: true` | Không | Dead-Letter Exchange trung chuyển message lỗi |
 | `trip.dlq` | Durable Queue | `durable: true` | Không | Lưu trữ các poison message và message vượt quá giới hạn retry |
-| `payment.queue` | Durable Queue | `durable: true` | `x-dead-letter-exchange: trip.dlx`<br>`x-dead-letter-routing-key: payment.event.dlq` | Hàng đợi tác vụ thanh toán của Payment Service |
+| `payment.queue` | Durable Queue | `durable: true` | `x-dead-letter-exchange: trip.dlx` | Hàng đợi tác vụ thanh toán của Payment Service |
 | `trip.queue` | Durable Queue | `durable: true` | `x-dead-letter-exchange: trip.dlx` | Hàng đợi điều phối Saga của Trip Service |
 | `matching.queue` | Durable Queue | `durable: true` | `x-dead-letter-exchange: trip.dlx` | Hàng đợi tìm kiếm và lock xe của Matching Service |
 
@@ -69,14 +69,14 @@ Một sai lầm kinh điển trong hệ phân tán là gọi `basicNack(requeue=
 
 ### 11.2. Giải Pháp Bounded Retries với Exponential Backoff Delay Queues
 TV3 triển khai chiến lược **Thử lại có giới hạn (Bounded Retries)** kết hợp hàng đợi trễ (Delay Queues với Dead-Lettering):
-- **Số lần thử tối đa:** `MAX_RETRIES = 3`.
+- **Số lần thử tối đa:** `MAX_RETRIES = 3` (tuân thủ nghiêm ngặt đặc tả môn học).
 - **Khoảng thời gian chờ tăng dần:** 1,000 ms $\rightarrow$ 2,000 ms $\rightarrow$ 4,000 ms.
 
 #### Thuật toán điều phối Retry & DLQ:
 ```mermaid
 flowchart TD
     A[Nhận Message từ payment.queue] --> B{Payload có hợp lệ không?}
-    B -- Không (Poison Message) --> C[basicNack requeue=false]
+    B -- Không (Poison Message / Lỗi Parse) --> C[basicNack requeue=false]
     C --> D[Chuyển thẳng sang trip.dlx -> trip.dlq]
     B -- Có --> E[Thực thi Payment Logic]
     E -- Thành công --> F[basicAck hoàn tất]
@@ -84,7 +84,7 @@ flowchart TD
     G -- Có --> H[Publish vào Queue trễ payment.queue.retry.delay]
     H --> I[basicAck message cũ]
     I --> J[Hết TTL -> Tự động chuyển về trip.exchange]
-    G -- Không (Vượt ngưỡng) --> K[basicNack requeue=false]
+    G -- Không (Vượt ngưỡng 3 lần) --> K[basicNack requeue=false]
     K --> D
 ```
 
@@ -93,7 +93,7 @@ Khi một message bị chuyển vào `trip.dlq`:
 1. Toàn bộ `payload` ban đầu được giữ nguyên vẹn 100%.
 2. Header `x-correlation-id` được bảo tồn để đối chiếu log trên toàn hệ thống.
 3. Bổ sung các header chẩn đoán chuyên sâu:
-   - `x-ds03-retry`: Số lần đã retry trước khi bị dead-letter.
+   - `x-ds03-retry`: Số lần đã retry trước khi bị dead-letter (giá trị 3).
    - `x-ds03-last-error`: Chuỗi thông báo lỗi cuối cùng của consumer.
    - `x-ds03-failed-at`: Thời điểm chính xác message bị chuyển vào DLQ.
 
@@ -125,7 +125,7 @@ CREATE TABLE outbox_events (
     event_type VARCHAR(100) NOT NULL,
     payload JSONB NOT NULL,
     correlation_id VARCHAR(100) NOT NULL,
-    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED')),
+    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PUBLISHING', 'PUBLISHED', 'FAILED')),
     retry_count INT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     published_at TIMESTAMP WITH TIME ZONE NULL
@@ -145,12 +145,25 @@ VALUES (gen_random_uuid(), 'PAYMENT', $tid, 'payment.event.hold_success', $paylo
 COMMIT;
 ```
 
-### 12.3. Outbox Publisher Worker & Xử Lý Sự Cố
+### 12.3. Outbox Publisher Worker & Atomic Claim
 Một tiến trình nền `OutboxWorker` chạy tuần hoàn:
-1. Đọc các bản ghi `PENDING` bằng truy vấn tối ưu:
+1. Đọc và **chiếm giữ nguyên tử (Atomic Claim)** các bản ghi `PENDING` sang trạng thái `PUBLISHING` bằng truy vấn:
    ```sql
-   SELECT * FROM outbox_events WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT 50 FOR UPDATE SKIP LOCKED;
+   UPDATE outbox_events 
+   SET status = 'PUBLISHING' 
+   WHERE id IN (
+     SELECT id FROM outbox_events 
+     WHERE status = 'PENDING' 
+        OR (status = 'PUBLISHING' AND created_at <= NOW() - INTERVAL '30 seconds')
+     ORDER BY created_at ASC 
+     LIMIT 20 
+     FOR UPDATE SKIP LOCKED
+   ) 
+   RETURNING id, aggregate_type, aggregate_id, event_type, payload, correlation_id, retry_count, created_at;
    ```
+   *Cơ chế này đảm bảo:*
+   - Các worker song song không bao giờ quét trùng sự kiện.
+   - Nếu tiến trình sập khi đang gửi, các bản ghi `PUBLISHING` quá 30 giây sẽ tự động được thu hồi và phát lại.
 2. Gửi message sang RabbitMQ qua ConfirmChannel.
 3. Chờ xác nhận `publisher confirms` từ broker.
 4. Cập nhật trạng thái bản ghi thành `PUBLISHED` kèm mốc thời gian `published_at = NOW()`.
@@ -198,6 +211,7 @@ Dashboard được xây dựng dưới dạng Single Page Application hiện đ�
    - Form đặt chuyến với toạ độ tương tác trực tiếp trên bản đồ Leaflet.
    - Nút kích hoạt kịch bản tranh chấp 2 khách (CT-01) và kịch bản Saga bù trừ (FR-02).
    - Thanh tiến trình trực quan hoá 4 bước của Saga Coordinator.
+   - **Xử lý trạng thái lỗi trung thực:** Khi service TV1/TV2 chưa online, hiển thị cảnh báo mất kết nối rõ ràng thay vì giả mạo trạng thái thành công.
 2. **Driver View:**
    - Bật/tắt trạng thái hoạt động (`AVAILABLE` $\leftrightarrow$ `OFFLINE`).
    - Cập nhật vị trí GPS mô phỏng.
@@ -212,6 +226,7 @@ Dashboard được xây dựng dưới dạng Single Page Application hiện đ�
 ### 14.2. Kết Quả Kiểm Thử Bắt Buộc
 
 #### 1. Kiểm Thử FT-07 (Simulated Payment Lifecycle):
+- File: `tests/ft-07-payment.test.js`
 - **Hold thành công:** Số dư ví giảm đúng bằng số tiền cước, `held_balance` tăng tương ứng, Outbox phát sinh `payment.event.hold_success`.
 - **Chống trừ tiền hai lần (Idempotency):** Gửi lại sự kiện cùng `event_id` hoặc cùng `trip_id` $\rightarrow$ Service nhận diện đã xử lý, không trừ tiền lần 2.
 - **Hold thất bại khi thiếu số dư:** Tài khoản 0 đ đặt xe $\rightarrow$ Phát hiện thiếu tiền, phát sinh `payment.event.hold_failed`, số dư không bị âm.
@@ -220,6 +235,7 @@ Dashboard được xây dựng dưới dạng Single Page Application hiện đ�
 - **Kết quả:** **100% PASS** (5/5 assertions đạt chuẩn).
 
 #### 2. Kiểm Thử Chịu Lỗi FR-01 (Kill/Restart Service):
+- File: `tests/fr-01-fr-02-fault-saga.test.js`
 1. Khởi tạo yêu cầu cuốc xe $\rightarrow$ message `payment.event.hold_requested` được ghi bền bỉ trong RabbitMQ `payment.queue`.
 2. Dừng đột ngột tiến trình Payment Service (`Kill / Docker stop`).
 3. Kiểm tra hàng đợi: Message được giữ nguyên vẹn trên đĩa cứng của RabbitMQ, không bị thất lạc.
@@ -227,6 +243,7 @@ Dashboard được xây dựng dưới dạng Single Page Application hiện đ�
 5. **Kết quả:** **PASS** — Minh chứng khả năng tự phục hồi (Self-Healing).
 
 #### 3. Kiểm Thử Saga Bù Trừ FR-02 (Compensating Transaction):
+- File: `tests/fr-01-fr-02-fault-saga.test.js`
 1. Tài xế $D_1$ đã được Matching Service gán và lock sang trạng thái `BUSY`.
 2. Khách hàng $P_1$ có số dư ví = 0 VNĐ.
 3. Payment Service kiểm tra số dư $\rightarrow$ Thất bại $\rightarrow$ Bắn event `payment.event.hold_failed`.
@@ -235,11 +252,26 @@ Dashboard được xây dựng dưới dạng Single Page Application hiện đ�
 6. Driver Service nhận lệnh bù trừ $\rightarrow$ Mở khoá tài xế $D_1$ từ `BUSY` trở lại `AVAILABLE`.
 7. **Kết quả:** **PASS** — Tính toàn vẹn hệ thống được bảo toàn, tài xế không bị kẹt ở trạng thái bận.
 
+#### 4. Kiểm Thử DLQ & Bounded Retries:
+- File: `tests/dlq-retry.test.js`
+- Poison message bị NACK ngay sang `trip.dlq` với `requeue = false`.
+- Lỗi tạm thời (Attempt 1, 2, 3) lần lượt được định tuyến sang các queue trễ 1000ms, 2000ms, 4000ms với header `x-ds03-retry`.
+- Vượt quá 3 lần retry bị NACK chuyển thẳng sang `trip.dlq`, bảo toàn `x-correlation-id` và thông báo lỗi.
+- **Kết quả:** **100% PASS** (4/4 assertions).
+
+#### 5. Kiểm Thử API Gateway Tracing & Resilience:
+- File: `tests/gateway.test.js`
+- Tự động sinh `X-Correlation-ID` mới hoặc bảo tồn mã trace hiện có.
+- Định tuyến chính xác tới các upstream microservices.
+- Xử lý CORS OPTIONS trả về 204.
+- Xử lý Upstream Unavailable trả về 502, Upstream Timeout trả về 504.
+- **Kết quả:** **100% PASS** (6/6 assertions).
+
 ### 14.3. Thí Nghiệm Đánh Giá Hiệu Năng (Load & Performance Experiment)
 TV3 xây dựng kịch bản benchmark tải tự động tại `tests/load-performance.experiment.js`:
 - **Cấu hình thử nghiệm:** Windows 11 x64, CPU Intel Core 16 Threads, 16 GB RAM.
 - **Mức tải thử nghiệm:** Concurrency = 20 workers, Tổng cộng 500 requests dồn dập qua API Gateway.
-- **Chỉ số thu thập:**
+- **Chỉ số đo đạc thực tế:**
   - **Throughput:** ~420 – 510 Requests/giây (RPS).
   - **Độ trễ trung bình (Mean Latency):** ~8.4 ms.
   - **Phân vị độ trễ p50:** 5.8 ms.

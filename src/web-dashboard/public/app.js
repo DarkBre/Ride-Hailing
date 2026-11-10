@@ -23,7 +23,7 @@ const DRIVER = {
 let map, pickupMarker, dropoffMarker, driverMarker, routeLine;
 let activeTrip = null;
 let currentPassengerKey = 'passenger-1';
-let clickMode = null; // 'pickup' | 'dropoff' | 'driver'
+let clickMode = null; // 'pickup' | 'dropoff'
 
 // Initialize Map
 function initMap() {
@@ -251,9 +251,11 @@ async function fetchWalletBalance() {
       const held = json.data?.held_balance ?? 0;
       document.getElementById('rider-balance').textContent = Number(balance).toLocaleString('vi-VN');
       document.getElementById('rider-held').textContent = Number(held).toLocaleString('vi-VN');
+    } else {
+      console.warn(`Payment Service responded with status ${res.status}`);
     }
   } catch (err) {
-    console.warn('Could not fetch wallet balance:', err.message);
+    console.warn('Could not fetch wallet balance (Payment Service unavailable):', err.message);
   }
 }
 
@@ -284,9 +286,17 @@ async function topupWallet(amount) {
         correlation_id: json.meta?.correlation_id,
       });
       fetchWalletBalance();
+    } else {
+      const errJson = await res.json().catch(() => ({}));
+      addLogEntry({
+        type: 'PAYMENT_ERROR',
+        service: 'payment',
+        message: `Nạp tiền thất bại: ${errJson.error?.message || res.statusText}`,
+      });
+      alert(`Nạp tiền thất bại: ${errJson.error?.message || 'Lỗi kết nối Payment Service'}`);
     }
   } catch (err) {
-    alert('Lỗi nạp tiền: ' + err.message);
+    alert('Lỗi nạp tiền (Payment Service mất kết nối): ' + err.message);
   }
 }
 
@@ -327,7 +337,7 @@ async function createTrip(overridePassengerKey = null) {
       }),
     });
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     if (res.ok && json.data) {
       activeTrip = json.data;
       document.getElementById('trip-id').textContent = activeTrip.id ? activeTrip.id.substring(0, 8) + '...' : 'pending';
@@ -343,18 +353,28 @@ async function createTrip(overridePassengerKey = null) {
       // Show driver incoming request
       document.getElementById('driver-actions-card').classList.remove('hidden');
     } else {
+      // Clear indication of failure instead of fabricated success
+      const errorMsg = json.error?.message || (res.status === 502 ? 'Trip Service (:8003) chưa khởi động hoặc mất kết nối' : `HTTP ${res.status}`);
+      document.getElementById('trip-status').textContent = 'FAILED';
+      document.getElementById('trip-status').className = 'px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30';
+      setSagaStep(1, false, 'FAILED');
+
       addLogEntry({
         type: 'TRIP_ERROR',
-        service: 'trip-service',
-        message: `Tạo cuốc xe thất bại: ${json.error?.message || 'Lỗi không xác định'}`,
+        service: 'gateway',
+        message: `⚠️ Lỗi tạo cuốc: ${errorMsg}`,
         correlation_id: correlationId,
       });
     }
   } catch (err) {
+    document.getElementById('trip-status').textContent = 'GATEWAY_ERROR';
+    document.getElementById('trip-status').className = 'px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30';
+    setSagaStep(1, false, 'ERROR');
+
     addLogEntry({
       type: 'GATEWAY_ERROR',
       service: 'gateway',
-      message: `Không thể kết nối Trip Service qua Gateway: ${err.message}`,
+      message: `Không thể kết nối API Gateway: ${err.message}`,
       correlation_id: correlationId,
     });
   }
@@ -363,7 +383,7 @@ async function createTrip(overridePassengerKey = null) {
 // Driver actions
 async function updateDriverLocation(lat, lon) {
   try {
-    await fetch(`${API_BASE}/drivers/location`, {
+    const res = await fetch(`${API_BASE}/drivers/location`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -371,7 +391,12 @@ async function updateDriverLocation(lat, lon) {
       },
       body: JSON.stringify({ latitude: lat, longitude: lon }),
     });
-  } catch (_) {}
+    if (!res.ok) {
+      console.warn(`Driver Service responded with status ${res.status}`);
+    }
+  } catch (err) {
+    console.warn('Driver Service unavailable:', err.message);
+  }
 }
 
 function updateDriverUi() {
@@ -445,9 +470,34 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('dropoff-mode').textContent = '👉 Hãy nhấp lên bản đồ...';
   });
 
-  document.getElementById('btn-toggle-driver').addEventListener('click', () => {
-    DRIVER.status = DRIVER.status === 'AVAILABLE' ? 'OFFLINE' : 'AVAILABLE';
-    updateDriverUi();
+  document.getElementById('btn-toggle-driver').addEventListener('click', async () => {
+    const nextStatus = DRIVER.status === 'AVAILABLE' ? 'OFFLINE' : 'AVAILABLE';
+    try {
+      const res = await fetch(`${API_BASE}/drivers/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Driver-Id': DRIVER.id,
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        DRIVER.status = nextStatus;
+        updateDriverUi();
+      } else {
+        addLogEntry({
+          type: 'DRIVER_ERROR',
+          service: 'driver',
+          message: `Không thể đổi trạng thái tài xế (HTTP ${res.status})`,
+        });
+        // Still toggle locally for simulation demonstration if driver service is offline
+        DRIVER.status = nextStatus;
+        updateDriverUi();
+      }
+    } catch (_) {
+      DRIVER.status = nextStatus;
+      updateDriverUi();
+    }
   });
 
   document.getElementById('btn-clear-logs').addEventListener('click', () => {

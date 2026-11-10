@@ -42,7 +42,7 @@ class PaymentBroker {
     });
     this.connection.on('close', () => {
       if (!this.isStopping) {
-        console.warn(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ connection closed. Reconnecting...`);
+        console.warn(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ connection closed. Channel invalidated.`);
         this.channel = null;
       }
     });
@@ -65,7 +65,7 @@ class PaymentBroker {
     const ch = this.channel;
     if (!ch) throw new Error('Channel not available for topology setup');
 
-    // 1. Declare Main Topic Exchange
+    // 1. Declare Main Topic Exchange (Durable)
     await ch.assertExchange(this.exchange, 'topic', { durable: true });
 
     // 2. Declare Dead-Letter Exchange (DLX) & Dead-Letter Queue (DLQ)
@@ -73,11 +73,10 @@ class PaymentBroker {
     await ch.assertQueue(this.dlq, { durable: true });
     await ch.bindQueue(this.dlq, this.dlx, '#');
 
-    // 3. Declare Payment Main Queue with DLX configuration
+    // 3. Declare Payment Main Queue with DLX configuration (preserves original routing key)
     await ch.assertQueue(this.queue, {
       durable: true,
       deadLetterExchange: this.dlx,
-      deadLetterRoutingKey: 'payment.event.dlq',
     });
 
     // 4. Bind Payment Queue to relevant topics
@@ -85,7 +84,7 @@ class PaymentBroker {
       await ch.bindQueue(this.queue, this.exchange, key);
     }
 
-    // 5. Declare Retry Delay Queues for Bounded Retries
+    // 5. Declare Retry Delay Queues for Bounded Retries with Exponential Backoff
     for (const key of PAYMENT_SUBSCRIPTIONS) {
       for (const delay of this.retryDelays) {
         const retryQueueName = `${this.queue}.retry.${key}.${delay}`;
@@ -165,7 +164,7 @@ class PaymentBroker {
     });
 
     this.consumerTag = consumerResult.consumerTag;
-    console.log(`[${new Date().toISOString()}] [payment-service] [INFO] Consumer started on queue: ${this.queue}`);
+    console.log(`[${new Date().toISOString()}] [payment-service] [INFO] Consumer active on queue: ${this.queue}`);
   }
 
   async _processIncomingMessage(msg, messageHandler) {
@@ -215,14 +214,14 @@ class PaymentBroker {
       );
 
       if (currentRetries < this.maxRetries) {
-        // Bounded Retry via Delay Queue
+        // Bounded Retry via Delay Queue with Exponential Backoff
         const delay = this.retryDelays[Math.min(currentRetries, this.retryDelays.length - 1)];
         const retryQueueName = `${this.queue}.retry.${envelope.event_type}.${delay}`;
 
         try {
           await new Promise((resolve, reject) => {
             ch.publish(
-              '', // default exchange to route directly by queue name
+              '', // default direct exchange
               retryQueueName,
               msg.content,
               {
@@ -238,7 +237,7 @@ class PaymentBroker {
             );
           });
 
-          // Acknowledge original message from main queue since it is now safely parked in retry queue
+          // Acknowledge original message from main queue since it is parked safely in retry queue
           ch.ack(msg);
           console.log(
             `[${new Date().toISOString()}] [${corrId}] [payment-service] [INFO] Message scheduled in retry queue (${retryQueueName}, delay ${delay}ms)`

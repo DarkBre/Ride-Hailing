@@ -32,6 +32,34 @@ function sendJson(res, statusCode, data, error = null, correlationId = '') {
   );
 }
 
+async function notifyGateway(eventData) {
+  try {
+    const gatewayUrl = process.env.GATEWAY_URL || 'http://localhost:8080';
+    const parsed = new URL('/api/v1/simulation/broadcast', gatewayUrl);
+    const bodyStr = JSON.stringify(eventData);
+
+    const req = http.request(
+      parsed,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(bodyStr),
+          'X-Correlation-ID': eventData.correlation_id || '',
+        },
+        timeout: 1000,
+      },
+      (res) => {
+        res.on('data', () => {});
+      }
+    );
+
+    req.on('error', () => {});
+    req.write(bodyStr);
+    req.end();
+  } catch (_) {}
+}
+
 async function verifyUser(req) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -39,7 +67,7 @@ async function verifyUser(req) {
   }
   const token = authHeader.slice(7);
 
-  // If local token decoding is possible or Identity Service is available:
+  // 1. Verify with Identity Service if reachable
   try {
     const identityUrl = new URL('/auth/me', config.IDENTITY_URL);
     const idRes = await fetch(identityUrl, {
@@ -55,7 +83,7 @@ async function verifyUser(req) {
     }
   } catch (_) {}
 
-  // Fallback: parse payload if valid base64 JSON JWT
+  // 2. Fallback: Parse claims if standard JWT
   try {
     const parts = token.split('.');
     if (parts.length === 3) {
@@ -82,7 +110,7 @@ function createPaymentHttpServer() {
 
     console.log(`[${new Date().toISOString()}] [${corrId}] [payment-service] [INFO] ${method} ${pathname}`);
 
-    // Liveness probe
+    // Liveness & health probes
     if (method === 'GET' && (pathname === '/live' || pathname === '/health')) {
       return sendJson(res, 200, { status: 'UP', service: config.SERVICE_NAME }, null, corrId);
     }
@@ -102,11 +130,10 @@ function createPaymentHttpServer() {
       }
     }
 
-    // Wallet endpoints
+    // Wallet balance query endpoints
     if (pathname === '/wallet' || pathname === '/api/v1/payments/wallet') {
       if (method === 'GET') {
-        let user = await verifyUser(req);
-        // Fallback for simulation / direct dashboard testing: allow query param or header
+        const user = await verifyUser(req);
         const userId = user?.id || parsedUrl.searchParams.get('user_id') || req.headers['x-user-id'];
 
         if (!userId) {
@@ -128,13 +155,18 @@ function createPaymentHttpServer() {
       }
     }
 
-    // Topup endpoint
-    if (pathname === '/wallet/topup' || pathname === '/api/v1/payments/topup') {
+    // Topup endpoints
+    if (
+      pathname === '/wallet/topup' ||
+      pathname === '/topup' ||
+      pathname === '/api/v1/payments/topup' ||
+      pathname === '/api/v1/payments/wallet/topup'
+    ) {
       if (method === 'POST') {
-        let user = await verifyUser(req);
+        const user = await verifyUser(req);
         const userId = user?.id || req.headers['x-user-id'];
 
-        // Read request body
+        // Read request body safely
         const chunks = [];
         let bodyBytes = 0;
         for await (const chunk of req) {
@@ -181,6 +213,16 @@ function createPaymentHttpServer() {
 
         try {
           const updatedWallet = await topupWallet(targetUserId, amount, idempotencyKey);
+
+          notifyGateway({
+            type: 'WALLET_TOPUP',
+            service: config.SERVICE_NAME,
+            userId: targetUserId,
+            amount,
+            newBalance: updatedWallet.balance,
+            correlation_id: corrId,
+          });
+
           return sendJson(res, 200, updatedWallet, null, corrId);
         } catch (err) {
           console.error(`[${new Date().toISOString()}] [${corrId}] [payment-service] [ERROR] Topup error:`, err);
@@ -210,9 +252,23 @@ async function start() {
   try {
     await broker.connect();
     console.log(`[${new Date().toISOString()}] [payment-service] [INFO] Connected to RabbitMQ at ${config.RABBITMQ.url}`);
-    
+
+    // Wrap event handler to also notify Gateway for real-time dashboard updates
+    const wrappedHandler = async (envelope) => {
+      const result = await handleBrokerEvent(envelope);
+      notifyGateway({
+        type: 'PAYMENT_EVENT_PROCESSED',
+        service: config.SERVICE_NAME,
+        event_type: envelope.event_type,
+        event_id: envelope.event_id,
+        correlation_id: envelope.correlation_id,
+        result,
+      });
+      return result;
+    };
+
     // Start Consumer for payment events
-    await broker.startConsumer(handleBrokerEvent);
+    await broker.startConsumer(wrappedHandler);
   } catch (err) {
     console.error(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ startup error:`, err.message);
   }

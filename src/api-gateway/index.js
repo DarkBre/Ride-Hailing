@@ -18,7 +18,7 @@ function broadcastSimulationEvent(eventData) {
   }
 }
 
-// Heartbeat to keep SSE clients alive
+// Periodic heartbeat to prevent client connection timeout
 setInterval(() => {
   for (const client of sseClients) {
     try {
@@ -35,7 +35,7 @@ function sendJson(res, statusCode, data, error = null, correlationId = '') {
     'X-Correlation-ID': correlationId,
     'Access-Control-Allow-Origin': config.CORS_ORIGIN,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Correlation-ID, Idempotency-Key, X-Internal-Key, X-User-Id',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Correlation-ID, Idempotency-Key, X-Internal-Key, X-User-Id, X-Driver-Id',
     'Access-Control-Expose-Headers': 'X-Correlation-ID',
     'Cache-Control': 'no-store',
   });
@@ -55,7 +55,7 @@ function sendJson(res, statusCode, data, error = null, correlationId = '') {
 function handleCors(req, res) {
   res.setHeader('Access-Control-Allow-Origin', config.CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-ID, Idempotency-Key, X-Internal-Key, X-User-Id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Correlation-ID, Idempotency-Key, X-Internal-Key, X-User-Id, X-Driver-Id');
   res.setHeader('Access-Control-Expose-Headers', 'X-Correlation-ID');
 
   if (req.method === 'OPTIONS') {
@@ -66,7 +66,7 @@ function handleCors(req, res) {
   return false;
 }
 
-function resolveUpstreamRoute(pathname, method) {
+function resolveUpstreamRoute(pathname) {
   // Strip /api/v1 prefix
   const route = pathname.replace(/^\/api\/v1(?=\/|$)/, '');
 
@@ -94,6 +94,8 @@ function resolveUpstreamRoute(pathname, method) {
     let upstreamPath = route.replace(/^\/payments/, '');
     if (upstreamPath === '' || upstreamPath === '/') {
       upstreamPath = '/wallet';
+    } else if (upstreamPath === '/topup') {
+      upstreamPath = '/wallet/topup';
     }
     return { target: config.SERVICES.payment, upstreamPath };
   }
@@ -173,7 +175,7 @@ function createGatewayServer() {
     }
 
     // Upstream Resolution
-    const resolved = resolveUpstreamRoute(pathname, method);
+    const resolved = resolveUpstreamRoute(pathname);
     if (!resolved) {
       return sendJson(
         res,

@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Transactional Outbox Pattern Table
+-- Transactional Outbox Pattern Table (Supports PENDING, PUBLISHING, PUBLISHED, FAILED)
 CREATE TABLE IF NOT EXISTS outbox_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     aggregate_type VARCHAR(50) NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     event_type VARCHAR(100) NOT NULL,
     payload JSONB NOT NULL,
     correlation_id VARCHAR(100) NOT NULL,
-    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED')),
+    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PUBLISHING', 'PUBLISHED', 'FAILED')),
     retry_count INT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     published_at TIMESTAMP WITH TIME ZONE NULL
@@ -62,4 +62,4 @@ CREATE TABLE IF NOT EXISTS processed_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id);
-CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, created_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, created_at) WHERE status IN ('PENDING', 'PUBLISHING');

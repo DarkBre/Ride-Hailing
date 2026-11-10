@@ -40,7 +40,14 @@ async function handleBrokerEvent(envelope) {
       return { duplicate: true };
     }
 
-    // 2. Event-specific handling
+    // 2. Acquire transaction advisory lock on tripId to serialize concurrent operations for same trip
+    try {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [tripId]);
+    } catch (_) {
+      // Non-Postgres fallback (e.g. mock DB in unit tests)
+    }
+
+    // 3. Event-specific handling
     if (event_type === 'payment.event.hold_requested' || event_type === 'trip.event.driver_matched') {
       return processHoldRequest(client, envelope);
     } else if (event_type === 'trip.event.completed') {
@@ -79,9 +86,9 @@ async function processHoldRequest(client, envelope) {
   if (existingHoldRes.rows.length > 0) {
     const existingHold = existingHoldRes.rows[0];
     if (existingHold.state === 'REFUNDED') {
-      // Out-of-order compensation already arrived
+      // Out-of-order compensation already arrived before hold!
       console.warn(
-        `[${new Date().toISOString()}] [${correlation_id}] [payment-service] [WARN] Trip ${tripId} was already refunded/compensated. Skipping hold.`
+        `[${new Date().toISOString()}] [${correlation_id}] [payment-service] [WARN] Trip ${tripId} was already compensated/refunded. Aborting hold to protect balance.`
       );
       return { holdState: 'ALREADY_REFUNDED' };
     }
@@ -93,7 +100,7 @@ async function processHoldRequest(client, envelope) {
     }
   }
 
-  // Row-level lock on passenger wallet
+  // Row-level lock on passenger wallet to prevent concurrent balance overdrafts
   let walletRes = await client.query(
     `SELECT id, user_id, balance, held_balance FROM wallets WHERE user_id = $1 FOR UPDATE`,
     [passengerId]
@@ -118,7 +125,7 @@ async function processHoldRequest(client, envelope) {
     await client.query(
       `UPDATE wallets 
        SET balance = balance - $1, held_balance = held_balance + $1, updated_at = NOW() 
-       WHERE id = $2`,
+       WHERE id = $2 AND balance >= $1`,
       [amount, wallet.id]
     );
 
@@ -155,7 +162,7 @@ async function processHoldRequest(client, envelope) {
 
     return { success: true, state: 'HELD', amount };
   } else {
-    // Insufficient balance -> Hold failed (Triggers Saga Compensation)
+    // Insufficient balance -> Hold failed (Contract trigger for Saga Compensation)
     await client.query(
       `INSERT INTO payment_holds (trip_id, user_id, amount, state, updated_at)
        VALUES ($1, $2, $3, 'FAILED', NOW())
@@ -267,7 +274,7 @@ async function processRefund(client, envelope) {
   );
 
   if (holdRes.rows.length === 0) {
-    // Record preemptive refund in case hold event arrives late
+    // Record preemptive refund in case hold event arrives late (out-of-order race condition)
     await client.query(
       `INSERT INTO payment_holds (trip_id, state, updated_at) VALUES ($1, 'REFUNDED', NOW())`,
       [tripId]
@@ -372,7 +379,7 @@ async function topupWallet(userId, amount, idempotencyKey) {
     );
 
     if (existingRes.rowCount === 0) {
-      // Key was already processed -> return previous result
+      // Key was already processed -> return previous result (Strict Idempotency)
       const prev = await client.query(
         `SELECT result, amount FROM wallet_topups WHERE user_id = $1 AND request_key = $2`,
         [userId, key]
