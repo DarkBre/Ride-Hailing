@@ -88,3 +88,7 @@ Trong demo CT-01, đưa đúng một tài xế AVAILABLE ở khu vực tìm ki�
 - [Kịch bản demo và fault recovery](docs/DEMO_SCRIPT.md)
 - [Kết quả load test](docs/LOAD_TEST_REPORT.md)
 - [Kết quả chaos test](docs/CHAOS_TEST_REPORT.md)
+- [Audit production](docs/FINAL_PRODUCTION_AUDIT.md)
+- [HTTPS và mạng](docs/NETWORK_SECURITY.md)
+- [RabbitMQ ACL](docs/RABBITMQ_SECURITY.md)
+- [Backup và restore drill](docs/BACKUP_RESTORE_REPORT.md)

@@ -2,6 +2,8 @@
 
 ## Bổ sung tương thích cho bản tích hợp
 
+- `GET /live` và `GET /ready` phục vụ probe. `/health` giữ tương thích. Identity có thể trả `429` và `Retry-After` cho login/registration khi hết budget.
+
 - `Idempotency-Key` khi tạo chuyến được định phạm vi theo hành khách. Một hành khách dùng lại key với payload khác nhận HTTP 409. Token triển khai qua Compose có `iss`, `aud`, `exp`, `role` và định danh do Identity cấp.
 
 - Gateway chuyển `GET /api/v1/drivers/available?lat=&lon=&radius_km=` sang `GET /drivers/nearby` sau xác thực Identity. Route Driver nội bộ cần `X-Internal-Key`. Tài xế tự đặt `OFFLINE` hoặc `AVAILABLE`. `RESERVED` và `BUSY` thuộc luồng hệ thống.

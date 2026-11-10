@@ -1,5 +1,7 @@
 # Báo cáo audit và nghiệm thu tích hợp DS03
 
+Đợt hardening ngày 10/11/2026 được ghi riêng trong [báo cáo release](FINAL_RELEASE_REPORT.md).
+
 ## Xác minh phát hành 09/11/2026
 
 Build, 56 regression case TV1, 13 kết quả unit/integration cục bộ và 5 test Compose đã qua. Load 597 request không ghi nhận lỗi HTTP/client. Probe RabbitMQ, Driver và PostgreSQL restart giữ dữ liệu đã commit. Xem [security audit](SECURITY_AUDIT.md), [load test](LOAD_TEST_REPORT.md), [chaos test](CHAOS_TEST_REPORT.md) và [production readiness](PRODUCTION_READINESS.md). Các bảng bên dưới lưu kết quả ở mốc tích hợp trước đợt hardening.

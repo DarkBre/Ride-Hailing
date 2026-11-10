@@ -1,5 +1,7 @@
 # Audit phát hành DS03
 
+Bản hardening 10/11/2026 triển khai Gateway TLS, login rate limit và ACL RabbitMQ tùy chọn. Phần dưới lưu audit baseline. Xem [production audit](FINAL_PRODUCTION_AUDIT.md) và [báo cáo release](FINAL_RELEASE_REPORT.md) để biết kết quả hiện tại.
+
 Mốc đầu lượt là `9c37517` trên `feature/tv2-driver-matching`. Working tree sạch. So với ref remote tại `c7a99e0`, bốn commit local thay đổi 58 file. Phần đó đã được lưu trong Git trước audit.
 
 | Thành phần | Trạng thái và phát hiện | Mức độ | Xử lý |

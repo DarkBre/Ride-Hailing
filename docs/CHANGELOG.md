@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Production hardening:** Thêm overlay Gateway HTTPS và RabbitMQ ACL, rate limit xác thực dùng SQLite, Identity/Trip non-root, liveness/readiness và drain khi shutdown.
+- **Vận hành:** Thêm backup/restore drill trên project riêng, probe TLS/ACL/network partition và tài liệu giới hạn HA.
+
 - **Release hardening:** Cô lập idempotency key theo hành khách, chặn payment failure đến trễ sửa chuyến đã kết thúc và đối chiếu command với khoản giữ tiền.
 - **Security:** Kiểm tra claim JWT và issuer/audience trong Compose, giới hạn request body, ẩn lỗi 5xx và kiểm tra token trước khi thu hồi.
 - **Pricing và nghiệm thu:** Compose lấy nguồn cung tài xế từ Driver API, giữ snapshot cước. Thêm probe load và restart RabbitMQ/Driver, tài liệu readiness và kịch bản demo.

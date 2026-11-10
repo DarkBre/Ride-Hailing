@@ -1,5 +1,7 @@
 # Đánh giá triển khai DS03
 
+Bản hardening 10/11/2026 đã bổ sung TLS Gateway, RabbitMQ ACL, login limiter, non-root và probe tách biệt. Các mục cũ phía dưới ghi baseline. Trạng thái hiện tại và bằng chứng ở [báo cáo release](FINAL_RELEASE_REPORT.md).
+
 ## Development và demo
 
 Compose khởi tạo database và role theo service, mount volume riêng cho PostgreSQL, RabbitMQ, Identity và Trip. Health check điều phối startup. Gateway là cổng publish duy nhất và bind localhost. Các service khôi phục kết nối RabbitMQ, tiến trình Matching dùng lease và Trip lưu outbox trước khi publish.

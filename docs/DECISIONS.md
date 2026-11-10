@@ -12,6 +12,10 @@ Tạm giữ bằng reservation có thời hạn 30 giây mặc định. GPS và 
 
 Trạng thái **đề xuất cho nhóm review**. Giữ Identity và Trip trên SQLite WAL riêng, mỗi service một replica ghi. Đặc tả DS03 yêu cầu dữ liệu tách riêng theo service. Quyết định chuyển PostgreSQL phụ thuộc nhu cầu scale ghi, HA và kế hoạch migration/rollback. [Đánh giá triển khai](PRODUCTION_READINESS.md#quyền-sở-hữu-và-sqlite)
 
+## ADR-009: Gateway TLS và vhost RabbitMQ do operator quản lý
+
+Trạng thái **triển khai bằng overlay, chờ nhóm review**. Compose demo vẫn chạy độc lập. Profile hardening lấy chứng chỉ từ volume read-only và quản lý topology RabbitMQ bằng bootstrap operator. Service dùng quyền publish và consume theo vhost và topic ACL. TLS nội bộ và HA cần triển khai và nghiệm thu riêng.
+
 Tài liệu này ghi lại các quyết định thiết kế kiến trúc quan trọng, lý do lựa chọn và người phê duyệt theo chuẩn quản trị dự án.
 
 ---

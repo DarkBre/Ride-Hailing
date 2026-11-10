@@ -2,6 +2,8 @@
 
 ## Bộ nghiệm thu bản tích hợp
 
+- `node --test tests/rate-limit.test.cjs` kiểm tra limiter với HTTP và SQLite thật. `tests/production-probes.test.cjs` xác minh TLS, ACL, UID và network partition trên stack hardening riêng. Các probe có thao tác restart chỉ chạy khi `RUN_NETWORK_TEST=1`.
+
 - Các probe `RUN_LOAD_TEST=1` và `RUN_CHAOS_TEST=1` chỉ chạy trên project Compose thử nghiệm riêng. Kết quả tải và fault recovery được ghi riêng. Chạy JWT claims regression bằng `node --test tests/security.test.cjs`.
 
 - `npm --prefix src/driver-service test` cùng `DRIVER_TEST_DATABASE_URL` kiểm tra FT-03/04, quyền JWT, rollback, rate limit, reservation và `SKIP LOCKED` trên PostgreSQL thật.

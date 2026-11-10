@@ -2,6 +2,8 @@
 
 ## Cấu hình đang chạy
 
+Profile hardening tùy chọn dùng HTTPS trực tiếp ở Gateway và RabbitMQ vhost `ds03` với ACL do operator provision. Quyền sở hữu database và routing key nghiệp vụ giữ nguyên. Xem [ADR-009](DECISIONS.md#adr-009-gateway-tls-và-vhost-rabbitmq-do-operator-quản-lý).
+
 Compose dùng Gateway 8080, Identity 8001, Driver 8002, Trip 8003, Matching 8004 và Payment 8005. Pricing chạy trong Trip. Identity và Trip giữ SQLite WAL trên hai volume riêng. Driver, Matching và Payment sở hữu database PostgreSQL và role đăng nhập riêng. Chỉ Gateway được publish ra host theo mặc định. Các sơ đồ và bảng phía dưới mô tả những phương án lịch sử. Xem quyết định tích hợp trong [ADR-007](DECISIONS.md#adr-007-bản-tích-hợp-postgresql--rabbitmq).
 
 ```mermaid
