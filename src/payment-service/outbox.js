@@ -29,61 +29,98 @@ class OutboxWorker {
   constructor(pool, broker, options = {}) {
     this.pool = pool;
     this.broker = broker;
+    this.workerId = options.workerId || `worker_${crypto.randomBytes(4).toString('hex')}`;
     this.pollIntervalMs = options.pollIntervalMs || config.OUTBOX_POLL_INTERVAL_MS;
     this.batchSize = options.batchSize || 20;
     this.maxRetries = options.maxRetries || 5;
+    this.leaseDurationSeconds = options.leaseDurationSeconds || 30;
+
     this.timer = null;
     this.isRunning = false;
     this.isFlushing = false;
+    this.inFlightFlushes = new Set();
   }
 
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
 
+    // Run recovery on startup for any stale unconfirmed leases from prior crash
+    this.recoverStaleLeases().catch((err) => {
+      console.warn(`[${new Date().toISOString()}] [payment-service] [WARN] Initial outbox lease recovery error:`, err.message);
+    });
+
     this.timer = setInterval(async () => {
-      if (this.isFlushing || !this.broker.isReady()) return;
+      if (this.isFlushing || !this.broker.isReady() || !this.isRunning) return;
       this.isFlushing = true;
+      const flushPromise = this.flushPending();
+      this.inFlightFlushes.add(flushPromise);
+
       try {
-        await this.flushPending();
+        await flushPromise;
       } catch (err) {
         console.error(
           `[${new Date().toISOString()}] [payment-service] [ERROR] Outbox worker flush error:`,
           err.message
         );
       } finally {
+        this.inFlightFlushes.delete(flushPromise);
         this.isFlushing = false;
       }
     }, this.pollIntervalMs);
 
     if (this.timer.unref) this.timer.unref();
     console.log(
-      `[${new Date().toISOString()}] [payment-service] [INFO] Outbox worker started (poll: ${this.pollIntervalMs}ms)`
+      `[${new Date().toISOString()}] [payment-service] [INFO] Outbox worker started [ID: ${this.workerId}, poll: ${this.pollIntervalMs}ms, lease: ${this.leaseDurationSeconds}s]`
     );
   }
 
+  /**
+   * Reclaim any leases that expired due to worker crash
+   */
+  async recoverStaleLeases() {
+    try {
+      const res = await this.pool.query(
+        `UPDATE outbox_events 
+         SET status = 'PENDING', locked_by = NULL, lease_expires_at = NULL 
+         WHERE status = 'PUBLISHING' AND lease_expires_at < NOW()`
+      );
+      if (res.rowCount > 0) {
+        console.log(`[${new Date().toISOString()}] [payment-service] [INFO] Reclaimed ${res.rowCount} expired outbox event lease(s) back to PENDING`);
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * Atomic Claim with Fencing Token:
+   * Acquires events atomically, assigns a unique lease fencing token (locked_by),
+   * and sets lease expiration to prevent zombie worker collisions.
+   */
   async flushPending() {
-    // Atomically claim pending events by transitioning status to 'PUBLISHING'
-    // Also reclaims events stuck in 'PUBLISHING' for > 30 seconds due to an abrupt crash
+    const leaseToken = `${this.workerId}_${Date.now()}`;
     let events = [];
+
     try {
       const claimResult = await this.pool.query(
         `UPDATE outbox_events 
-         SET status = 'PUBLISHING' 
+         SET status = 'PUBLISHING',
+             locked_by = $1,
+             locked_at = NOW(),
+             lease_expires_at = NOW() + ($2 || ' seconds')::INTERVAL
          WHERE id IN (
            SELECT id FROM outbox_events 
            WHERE status = 'PENDING' 
-              OR (status = 'PUBLISHING' AND created_at <= NOW() - INTERVAL '30 seconds')
+              OR (status = 'PUBLISHING' AND lease_expires_at < NOW())
            ORDER BY created_at ASC 
-           LIMIT $1 
+           LIMIT $3 
            FOR UPDATE SKIP LOCKED
          ) 
-         RETURNING id, aggregate_type, aggregate_id, event_type, payload, correlation_id, retry_count, created_at`,
-        [this.batchSize]
+         RETURNING id, aggregate_type, aggregate_id, event_type, payload, correlation_id, retry_count, created_at, locked_by`,
+        [leaseToken, `${this.leaseDurationSeconds}`, this.batchSize]
       );
       events = claimResult.rows;
     } catch (err) {
-      // Fallback for non-Postgres test environments
+      // Fallback for mock DB / test environments
       try {
         const fallbackRes = await this.pool.query(
           `SELECT id, aggregate_type, aggregate_id, event_type, payload, correlation_id, retry_count, created_at 
@@ -113,21 +150,31 @@ class OutboxWorker {
       };
 
       try {
-        // Publish to broker with publisher confirmation
+        // Publish to RabbitMQ with publisher confirmation
         await this.broker.publish(envelope);
 
-        // Mark as PUBLISHED upon broker confirmation
-        await this.pool.query(
+        // Fenced update: Only mark PUBLISHED if our lease token is STILL valid
+        // (prevents zombie worker double-updating if another worker already reclaimed an expired lease)
+        const updateRes = await this.pool.query(
           `UPDATE outbox_events 
-           SET status = 'PUBLISHED', published_at = NOW() 
-           WHERE id = $1`,
-          [evt.id]
+           SET status = 'PUBLISHED', 
+               published_at = NOW(), 
+               locked_by = NULL, 
+               lease_expires_at = NULL 
+           WHERE id = $1 AND (locked_by = $2 OR locked_by IS NULL) AND status = 'PUBLISHING'`,
+          [evt.id, leaseToken]
         );
 
-        publishedCount++;
-        console.log(
-          `[${new Date().toISOString()}] [${evt.correlation_id}] [payment-service] [INFO] Outbox event published: ${evt.event_type} (${evt.id})`
-        );
+        if (updateRes.rowCount > 0) {
+          publishedCount++;
+          console.log(
+            `[${new Date().toISOString()}] [${evt.correlation_id}] [payment-service] [INFO] Outbox event published: ${evt.event_type} (${evt.id})`
+          );
+        } else {
+          console.warn(
+            `[${new Date().toISOString()}] [${evt.correlation_id}] [payment-service] [WARN] Outbox event ${evt.id} lease expired before confirmation was recorded. Reclaimed by another worker.`
+          );
+        }
       } catch (publishErr) {
         const nextRetry = (evt.retry_count || 0) + 1;
         const newStatus = nextRetry >= this.maxRetries ? 'FAILED' : 'PENDING';
@@ -138,9 +185,12 @@ class OutboxWorker {
 
         await this.pool.query(
           `UPDATE outbox_events 
-           SET retry_count = $1, status = $2 
-           WHERE id = $3`,
-          [nextRetry, newStatus, evt.id]
+           SET retry_count = $1, 
+               status = $2, 
+               locked_by = NULL, 
+               lease_expires_at = NULL 
+           WHERE id = $3 AND (locked_by = $4 OR locked_by IS NULL)`,
+          [nextRetry, newStatus, evt.id, leaseToken]
         );
       }
     }
@@ -148,11 +198,15 @@ class OutboxWorker {
     return publishedCount;
   }
 
-  stop() {
+  async stop() {
     this.isRunning = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    // Await any in-flight flushes to complete gracefully
+    if (this.inFlightFlushes.size > 0) {
+      await Promise.allSettled(Array.from(this.inFlightFlushes));
     }
   }
 }
