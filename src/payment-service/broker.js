@@ -73,10 +73,13 @@ class PaymentBroker {
     await ch.assertQueue(this.dlq, { durable: true });
     await ch.bindQueue(this.dlq, this.dlx, '#');
 
-    // 3. Declare Payment Main Queue with DLX configuration (preserves original routing key)
+    // 3. Declare Payment Main Queue with DLX configuration.
+    // deadLetterRoutingKey must match rabbitmq-definitions.json to avoid PRECONDITION_FAILED
+    // when RabbitMQ pre-creates the queue from load_definitions at container startup.
     await ch.assertQueue(this.queue, {
       durable: true,
       deadLetterExchange: this.dlx,
+      deadLetterRoutingKey: 'payment.event.dlq',
     });
 
     // 4. Bind Payment Queue to relevant topics
