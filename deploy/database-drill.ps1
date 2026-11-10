@@ -61,7 +61,7 @@ if ($Mode -eq 'Backup') {
     if ($tables -ne '0') { throw "Restore target $db is not empty" }
   }
   foreach ($service in @('identity','trip')) {
-    Invoke-Compose run --no-deps --rm -T -v "${mount}:ro" $service node -e 'const fs=require("node:fs"); if(fs.existsSync(require("./config").DB_PATH)) process.exit(1);' $service
+    Invoke-Compose run --no-deps --rm -T -v "${mount}:ro" $service node -e 'const fs=require("node:fs"); if(fs.existsSync(require("./config").DB_PATH)) throw new Error("Restore target exists"); const {DatabaseSync}=require("node:sqlite"); const db=new DatabaseSync("/archive/"+process.argv[1]+".sqlite",{readOnly:true}); try { const rows=db.prepare("PRAGMA integrity_check").all(); if(rows.length!==1 || rows[0].integrity_check!=="ok") throw new Error("Invalid SQLite backup"); } finally {db.close();}' $service
   }
   foreach ($db in $databases) {
     Invoke-Compose cp (Join-Path $directory "$db.dump") "postgres:/tmp/$db.dump"
