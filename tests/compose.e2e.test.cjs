@@ -69,6 +69,10 @@ test('Compose E2E, FT-06 and CT-01 on real RabbitMQ/PostgreSQL', { skip: !enable
     WHERE driver_id = '${driverId}' AND state IN ('HELD','CONFIRMED')`), '1');
   assert.equal((await request(`/trips/${winner.id}/accept`, 'POST', {}, driver.token)).status, 'ACCEPTED');
   assert.equal(sql('driver_db', `SELECT status FROM drivers WHERE id = '${driverId}'`), 'BUSY');
+  if (process.env.BACKUP_CHECKPOINT === '1') {
+    t.diagnostic(`Backup checkpoint trip=${winner.id} driver=${driverId} fare=${winner.fare}`);
+    return;
+  }
   assert.equal((await request(`/trips/${winner.id}/accept`, 'POST', {}, driver.token)).status, 'ACCEPTED');
   await request(`/trips/${winner.id}/start`, 'POST', {}, driver.token);
   await request(`/trips/${winner.id}/complete`, 'POST', {}, driver.token);
