@@ -1,0 +1,45 @@
+# Apply after docker-compose.acl.yml. Mount only public CA and server identities.
+x-client-tls: &client-tls
+  NODE_EXTRA_CA_CERTS: /run/ds03-trust/ca.crt
+  PGSSLMODE: verify-full
+x-ca: &ca "${INTERNAL_TLS_DIR:?set INTERNAL_TLS_DIR}/ca.crt:/run/ds03-trust/ca.crt:ro"
+
+services:
+  postgres:
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - |
+        install -d -o postgres -g postgres -m 0700 /run/ds03-postgres
+        install -o postgres -g postgres -m 0600 /run/ds03-pg-input/server.key /run/ds03-postgres/server.key
+        install -o postgres -g postgres -m 0644 /run/ds03-pg-input/server.crt /run/ds03-postgres/server.crt
+        exec docker-entrypoint.sh postgres -c ssl=on -c ssl_min_protocol_version=TLSv1.2 -c ssl_cert_file=/run/ds03-postgres/server.crt -c ssl_key_file=/run/ds03-postgres/server.key -c hba_file=/etc/ds03-pg-hba.conf
+    volumes:
+      - ${INTERNAL_TLS_DIR}/postgres:/run/ds03-pg-input:ro
+      - ./postgres-tls-hba.conf:/etc/ds03-pg-hba.conf:ro
+  rabbitmq:
+    volumes:
+      - ${INTERNAL_TLS_DIR}/rabbitmq:/run/ds03-broker:ro
+      - ./rabbitmq-tls.conf:/etc/rabbitmq/conf.d/90-ds03-tls.conf:ro
+  driver:
+    environment:
+      <<: *client-tls
+    volumes: [*ca]
+  matching:
+    environment:
+      <<: *client-tls
+      RABBITMQ_MANAGED_TOPOLOGY: "1"
+      RABBITMQ_URL: amqps://matching:${RABBITMQ_MATCHING_PASSWORD:?set RABBITMQ_MATCHING_PASSWORD}@rabbitmq:5671/ds03?heartbeat=10
+    volumes: [*ca]
+  trip:
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/ds03-trust/ca.crt
+      RABBITMQ_MANAGED_TOPOLOGY: "1"
+      RABBITMQ_URL: amqps://trip:${RABBITMQ_TRIP_PASSWORD:?set RABBITMQ_TRIP_PASSWORD}@rabbitmq:5671/ds03?heartbeat=10
+    volumes: [*ca]
+  payment:
+    environment:
+      <<: *client-tls
+      RABBITMQ_MANAGED_TOPOLOGY: "1"
+      RABBITMQ_URL: amqps://payment:${RABBITMQ_PAYMENT_PASSWORD:?set RABBITMQ_PAYMENT_PASSWORD}@rabbitmq:5671/ds03?heartbeat=10
+    volumes: [*ca]

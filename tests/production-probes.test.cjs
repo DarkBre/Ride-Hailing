@@ -7,7 +7,7 @@ const { test } = require('node:test');
 const project = process.env.COMPOSE_TEST_PROJECT;
 const envFile = process.env.COMPOSE_TEST_ENV_FILE;
 const base = process.env.GATEWAY_TEST_URL;
-const enabled = Boolean(project?.startsWith('ds03-hardening') && envFile && base?.startsWith('https:'));
+const enabled = Boolean(/^ds03-(hardening|acceptance)/.test(project ?? '') && envFile && base?.startsWith('https:'));
 const docker = args => execFileSync('docker', args, { encoding: 'utf8', timeout: 45_000 }).trim();
 const compose = args => docker(['compose', '-p', project, '--env-file', envFile,
   '-f', 'deploy/docker-compose.yml', ...args]);
