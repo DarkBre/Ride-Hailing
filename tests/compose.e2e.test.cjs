@@ -149,13 +149,20 @@ test('Matching restart, driver rejection, passenger cancellation and reservation
       wallet => wallet.balance === 200000 && wallet.held_balance === 0);
   };
   let queuedTrip;
-  docker(['stop', 'matching']);
+  const partition = process.env.MATCHING_NETWORK_PARTITION === '1';
+  const project = process.env.COMPOSE_TEST_PROJECT;
+  if (partition) assert.match(project, /^ds03-acceptance/);
+  const changeNetwork = (action, args = []) => promisify(execFile)('docker',
+    ['network', action, ...args, `${project}_default`, `${project}-matching-1`], { timeout: 10_000 });
+  if (partition) await changeNetwork('disconnect');
+  else await dockerAsync(['stop', 'matching']);
   try {
     queuedTrip = await book();
     await pause(1500);
     assert.equal((await get(queuedTrip)).status, 'REQUESTED');
   } finally {
-    docker(['start', 'matching']);
+    if (partition) await changeNetwork('connect', ['--alias', 'matching']);
+    else await dockerAsync(['start', 'matching']);
   }
   const matched = await waitFor(() => get(queuedTrip), trip => trip.status === 'CONFIRMED');
   assert.equal(matched.driver_id, driverId);
@@ -254,10 +261,13 @@ test('Chaos: RabbitMQ outage, Driver and PostgreSQL restarts preserve committed 
 });
 
 test('Load: concurrent GPS, nearby, booking and wallet traffic', {
-  skip: !enabled || process.env.RUN_LOAD_TEST !== '1', timeout: 130_000,
+  skip: !enabled || process.env.RUN_LOAD_TEST !== '1', timeout: 165_000,
 }, async t => {
   const users = 8;
-  const durationMs = 60_000;
+  const durationMs = Number(process.env.LOAD_DURATION_MS ?? 60_000);
+  const warmupMs = Number(process.env.LOAD_WARMUP_MS ?? 0);
+  assert.ok(Number.isInteger(durationMs) && durationMs >= 5000 && durationMs <= 60_000);
+  assert.ok(Number.isInteger(warmupMs) && warmupMs >= 0 && warmupMs <= 10_000);
   const drivers = await Promise.all(Array.from({ length: 4 }, () => account('DRIVER')));
   const passengers = await Promise.all(Array.from({ length: 4 }, () => account('PASSENGER')));
   const location = { latitude: 17, longitude: -141 };
@@ -267,29 +277,53 @@ test('Load: concurrent GPS, nearby, booking and wallet traffic', {
     await request('/drivers/status', 'PUT', { status: 'AVAILABLE' }, driver.token);
   }
   const observations = {};
+  const bookings = [];
+  let start;
   async function measure(name, run) {
     const started = performance.now();
     let failed = false;
-    try { return await run(); } catch { failed = true; return undefined; } finally {
-      (observations[name] ??= []).push({ ms: performance.now() - started, failed });
+    let timeout = false;
+    try {
+      const result = await run();
+      if (name === 'booking' && started >= start) bookings.push(result.id);
+      return result;
+    } catch (error) {
+      failed = true;
+      timeout = error.name === 'TimeoutError' || error.name === 'AbortError';
+      return undefined;
+    } finally {
+      if (started >= start) (observations[name] ??= []).push({ ms: performance.now() - started, failed, timeout });
     }
   }
   const draft = { pickup_latitude: location.latitude, pickup_longitude: location.longitude,
     pickup_address: 'Load pickup', dropoff_latitude: 17.01, dropoff_longitude: -141,
     dropoff_address: 'Load dropoff' };
-  const start = performance.now();
+  start = performance.now() + warmupMs;
   const deadline = start + durationMs;
   const queueSamples = [];
   const connectionSamples = [];
-  const sample = setInterval(() => {
+  const resourceSamples = [];
+  let pendingSample;
+  async function collect() {
     try {
-      const output = docker(['exec', '-T', 'rabbitmq', 'rabbitmqctl', '-q', 'list_queues',
-        'name', 'messages_ready', 'messages_unacknowledged']);
-      queueSamples.push(output.split(/\r?\n/).filter(line => /^(trip|payment|matching)\.queue\s/.test(line)));
-      connectionSamples.push(sql('postgres', `SELECT datname || ':' || count(*) FROM pg_stat_activity
-        WHERE datname IN ('driver_db','match_db','payment_db') GROUP BY datname ORDER BY datname`));
+      const containers = ['identity','driver','trip','matching','payment','gateway','postgres','rabbitmq']
+        .map(service => `${process.env.COMPOSE_TEST_PROJECT}-${service}-1`);
+      const [output, connections, resources] = await Promise.all([
+        dockerAsync(['exec', '-T', 'rabbitmq', 'rabbitmqctl', '-q', 'list_queues',
+          '-p', process.env.LOAD_RABBITMQ_VHOST || '/', 'name', 'messages_ready', 'messages_unacknowledged']),
+        dockerAsync(['exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-U', 'postgres', '-d', 'postgres',
+          '-c', "SELECT datname || ':' || count(*) FROM pg_stat_activity WHERE datname IN ('driver_db','match_db','payment_db') GROUP BY datname ORDER BY datname"]),
+        promisify(execFile)('docker', ['stats', '--no-stream', '--format', '{{.Name}} {{.CPUPerc}} {{.MemUsage}}', ...containers],
+          { timeout: 10_000 }),
+      ]);
+      queueSamples.push(output.stdout.split(/\r?\n/).filter(line => /^(trip|payment|matching)\.queue\s/.test(line)));
+      connectionSamples.push(connections.stdout.trim());
+      resourceSamples.push(resources.stdout.trim());
     } catch { /* Retain the samples already captured. */ }
-  }, 15_000);
+  }
+  const sample = setInterval(() => {
+    if (!pendingSample) pendingSample = collect().finally(() => { pendingSample = undefined; });
+  }, Math.min(15_000, Math.floor(durationMs / 2)));
   try {
     await Promise.all([
       ...drivers.map(async driver => {
@@ -313,17 +347,28 @@ test('Load: concurrent GPS, nearby, booking and wallet traffic', {
     clearInterval(sample);
   }
   const seconds = (performance.now() - start) / 1000;
+  await pendingSample;
   const metrics = Object.fromEntries(Object.entries(observations).map(([name, samples]) => {
     const times = samples.map(item => item.ms).sort((a, b) => a - b);
     const percentile = p => Math.round(times[Math.ceil(times.length * p) - 1] * 10) / 10;
     return [name, { requests: times.length, errors: samples.filter(item => item.failed).length,
+      timeouts: samples.filter(item => item.timeout).length, p50_ms: percentile(.5),
       average_ms: Math.round(times.reduce((a, b) => a + b, 0) / times.length * 10) / 10,
       p95_ms: percentile(.95), p99_ms: percentile(.99) }];
   }));
-  t.diagnostic(JSON.stringify({ users, seconds, metrics, queueSamples, connectionSamples }));
   assert.ok(Object.values(metrics).every(item => item.requests > 0));
+  const bookingIds = bookings.filter(id => /^[a-f0-9-]{36}$/i.test(id)).map(id => `'${id}'`).join(',') || 'NULL';
+  await waitFor(() => sql('match_db', `SELECT count(*) FROM matching_requests
+    WHERE trip_id IN (${bookingIds}) AND state <> 'PENDING'`), count => Number(count) === bookings.length, 35_000);
   await waitFor(() => sql('driver_db', `SELECT count(*) FROM driver_reservations WHERE state IN ('HELD','CONFIRMED')
     AND driver_id IN (SELECT id FROM drivers WHERE user_id IN (${drivers.map(d => `'${d.user.id}'`).join(',')}))`),
   count => count === '0', 30_000);
   for (const driver of drivers) await request('/drivers/status', 'PUT', { status: 'OFFLINE' }, driver.token);
+  const eventStats = sql('match_db', `SELECT json_build_object('processed', count(*), 'p95_ms',
+    percentile_cont(.95) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM
+      (o.created_at - (m.envelope->>'timestamp')::timestamptz)) * 1000))
+    FROM matching_requests m JOIN outbox_events o ON o.envelope->>'aggregate_id' = m.trip_id::text
+    WHERE m.trip_id IN (${bookingIds})`);
+  t.diagnostic(JSON.stringify({ users, seconds, warmupMs, metrics, queueSamples, connectionSamples,
+    resourceSamples, events: JSON.parse(eventStats) }));
 });

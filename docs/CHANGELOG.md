@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Nghiệm thu cuối:** Thêm overlay PostgreSQL TLS và AMQPS, probe TLS âm tính, PITR biệt lập, integrity check khi restore và benchmark A/B. Giữ profile demo, schema và contract nghiệp vụ.
+
 - **Production hardening:** Thêm overlay Gateway HTTPS và RabbitMQ ACL, rate limit xác thực dùng SQLite, Identity/Trip non-root, liveness/readiness và drain khi shutdown.
 - **Vận hành:** Thêm backup/restore drill trên project riêng, probe TLS/ACL/network partition và tài liệu giới hạn HA.
 

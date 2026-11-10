@@ -2,6 +2,24 @@
 
 Bản tích hợp chạy Gateway, Identity, Driver, Trip, Matching và Payment cùng PostgreSQL và RabbitMQ. Pricing nằm trong Trip. Identity và Trip giữ SQLite WAL riêng của TV1. Driver, Matching và Payment dùng database và role PostgreSQL riêng. Notification, Dashboard và SSE nằm trong phạm vi mở rộng.
 
+```mermaid
+flowchart LR
+  Client --> Gateway
+  Gateway --> Identity
+  Gateway --> Driver
+  Gateway --> Trip
+  Gateway --> Payment
+  Trip <--> RabbitMQ
+  RabbitMQ <--> Matching
+  RabbitMQ <--> Payment
+  Matching --> Driver
+  Identity --> Users[(SQLite Identity)]
+  Trip --> Rides[(SQLite Trip)]
+  Driver --> Drivers[(driver_db)]
+  Matching --> Matches[(match_db)]
+  Payment --> Wallets[(payment_db)]
+```
+
 ## Chạy bằng Docker Compose
 
 Cần Docker Engine, Compose v2 trở lên và Node.js 22.13 trở lên để chạy script kiểm thử trên host.
@@ -92,3 +110,10 @@ Trong demo CT-01, đưa đúng một tài xế AVAILABLE ở khu vực tìm ki�
 - [HTTPS và mạng](docs/NETWORK_SECURITY.md)
 - [RabbitMQ ACL](docs/RABBITMQ_SECURITY.md)
 - [Backup và restore drill](docs/BACKUP_RESTORE_REPORT.md)
+- [TLS cho PostgreSQL và RabbitMQ](docs/INTERNAL_TLS.md)
+- [Demo nghiệm thu từng bước](docs/FINAL_DEMO_SCRIPT.md)
+- [Disaster recovery và PITR](docs/DISASTER_RECOVERY.md)
+- [Benchmark A/B và lệnh chạy lại](docs/PERFORMANCE_BENCHMARK.md)
+- [Báo cáo nghiệm thu cuối](docs/FINAL_ACCEPTANCE_REPORT.md)
+
+Nếu `/live` trả 200 còn `/ready` trả 503, kiểm tra dependency trước khi restart service. Với overlay TLS, kiểm tra CA bundle, SAN và hạn chứng chỉ. Với HTTP 429 từ Identity, đợi theo `Retry-After`.
