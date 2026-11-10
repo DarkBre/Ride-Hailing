@@ -30,7 +30,7 @@ function authLimiter(db, config = {}) {
     const timestamp = now();
     const ip = clientIp(req, key).replace(/^::ffff:(?=\d)/, '');
     const buckets = [[`${action}:ip:${ip}`, action === 'login' ? ipLimit : registerLimit]];
-    if (action === 'login' && typeof email === 'string' && email.length <= 255) {
+    if (action === 'login' && typeof email === 'string') {
       const digest = createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
       buckets.push([`login:account:${digest}`, accountLimit]);
     }

@@ -114,15 +114,15 @@ function createRoutes(db) {
       handler: async ({ body }) => {
         const { email, password } = body || {};
 
-        if (!email || !password) {
+        if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
           const err = new Error('Vui lòng cung cấp đầy đủ email và mật khẩu');
           err.status = 400;
           err.code = 'MISSING_CREDENTIALS';
           throw err;
         }
 
-        const user = db.get('SELECT * FROM users WHERE email = ?;', String(email).trim().toLowerCase());
-        const isValid = auth.verifyPassword(String(password), user?.password_hash ?? dummyPasswordHash);
+        const user = db.get('SELECT * FROM users WHERE email = ?;', email.trim().toLowerCase());
+        const isValid = auth.verifyPassword(password, user?.password_hash ?? dummyPasswordHash);
         if (!user || !isValid) {
           const err = new Error('Email hoặc mật khẩu không chính xác');
           err.status = 401;

@@ -30,6 +30,7 @@ test('Identity rate limits IP and account concurrently, ignores spoofing and res
   const duplicate = await Promise.all([post('login', 'known@example.test', b), post('login', 'known@example.test', b)]);
   assert.deepEqual(duplicate.map(item => item.status).sort(), [401, 429]);
   assert.equal(duplicate.find(item => item.status === 429).retry, '2');
+  assert.equal((await post('login', ['known@example.test'], b, true, 'test-password')).status, 400);
   assert.equal((await post('login', 'other@example.test', a)).status, 401);
   for (let i = 0; i < 3; i++) {
     assert.equal((await post('login', `unknown${i}@example.test`, `192.0.2.${10+i}`, false)).status, 401);
