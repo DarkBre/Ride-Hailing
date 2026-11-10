@@ -88,7 +88,8 @@ function paymentServer(pool, identityUrl, ready) {
         meta: { correlation_id: req.headers['x-correlation-id'] || randomUUID(), timestamp: new Date().toISOString() } }));
     };
     try {
-      if (req.method === 'GET' && req.url === '/health') {
+      if (req.method === 'GET' && req.url === '/live') return send(200, { status: 'live' });
+      if (req.method === 'GET' && ['/health', '/ready'].includes(req.url)) {
         await pool.query('SELECT 1');
         return send(ready() ? 200 : 503, { ready: ready() });
       }

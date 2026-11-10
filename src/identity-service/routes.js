@@ -7,6 +7,7 @@ const config = require('./config');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function createRoutes(db) {
+  const dummyPasswordHash = auth.hashPassword(crypto.randomUUID());
   return [
     // 1. Health check
     {
@@ -121,15 +122,8 @@ function createRoutes(db) {
         }
 
         const user = db.get('SELECT * FROM users WHERE email = ?;', String(email).trim().toLowerCase());
-        if (!user) {
-          const err = new Error('Email hoặc mật khẩu không chính xác');
-          err.status = 401;
-          err.code = 'INVALID_CREDENTIALS';
-          throw err;
-        }
-
-        const isValid = auth.verifyPassword(String(password), user.password_hash);
-        if (!isValid) {
+        const isValid = auth.verifyPassword(String(password), user?.password_hash ?? dummyPasswordHash);
+        if (!user || !isValid) {
           const err = new Error('Email hoặc mật khẩu không chính xác');
           err.status = 401;
           err.code = 'INVALID_CREDENTIALS';

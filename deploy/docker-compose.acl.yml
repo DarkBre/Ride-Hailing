@@ -1,0 +1,13 @@
+services:
+  matching:
+    environment:
+      RABBITMQ_MANAGED_TOPOLOGY: "1"
+      RABBITMQ_URL: amqp://matching:${RABBITMQ_MATCHING_PASSWORD:?set RABBITMQ_MATCHING_PASSWORD}@rabbitmq:5672/ds03?heartbeat=10
+  trip:
+    environment:
+      RABBITMQ_MANAGED_TOPOLOGY: "1"
+      RABBITMQ_URL: amqp://trip:${RABBITMQ_TRIP_PASSWORD:?set RABBITMQ_TRIP_PASSWORD}@rabbitmq:5672/ds03?heartbeat=10
+  payment:
+    environment:
+      RABBITMQ_MANAGED_TOPOLOGY: "1"
+      RABBITMQ_URL: amqp://payment:${RABBITMQ_PAYMENT_PASSWORD:?set RABBITMQ_PAYMENT_PASSWORD}@rabbitmq:5672/ds03?heartbeat=10

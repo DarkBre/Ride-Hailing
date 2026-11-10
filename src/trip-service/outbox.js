@@ -115,6 +115,7 @@ class OutboxManager {
     let successCount = 0;
 
     for (const evt of events) {
+      if (this.stopping) break;
       try {
         let payload = null;
         try {
@@ -168,17 +169,10 @@ class OutboxManager {
    */
   startWorker(intervalMs = 1000) {
     if (this.timer) return;
-    let running = false;
-    this.timer = setInterval(async () => {
-      if (running) return;
-      running = true;
-      try {
-        await this.flushPending();
-      } catch (_) {
-        // Leave persisted events eligible for the next tick.
-      } finally {
-        running = false;
-      }
+    this.stopping = false;
+    this.timer = setInterval(() => {
+      if (this.flush) return;
+      this.flush = this.flushPending().catch(() => {}).finally(() => { this.flush = null; });
     }, intervalMs);
     if (this.timer.unref) this.timer.unref();
   }
@@ -187,10 +181,12 @@ class OutboxManager {
    * Tắt worker
    */
   stopWorker() {
+    this.stopping = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    return this.flush;
   }
 }
 

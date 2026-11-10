@@ -6,6 +6,9 @@ x-http-health: &http-health
   retries: 20
   start_period: 5s
 
+x-app-runtime: &app-runtime
+  stop_grace_period: 30s
+
 x-broker-env: &broker-env
   RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672?heartbeat=10
   RABBITMQ_EXCHANGE: trip.exchange
@@ -40,25 +43,34 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_CTL_ERL_ARGS: "+S 1:1 +A 2"
     volumes:
       - rabbit-data:/var/lib/rabbitmq
     healthcheck:
       <<: *http-health
-      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      timeout: 10s
+      test: [CMD, rabbitmq-diagnostics, -q, check_running]
     restart: unless-stopped
 
   identity:
+    <<: *app-runtime
     build: ../src/identity-service
     environment:
       <<: *jwt-env
       DATA_DIR: /app/data
+      RATE_PROXY_KEY: ${RATE_PROXY_KEY:-}
+      AUTH_RATE_WINDOW_MS: ${AUTH_RATE_WINDOW_MS:-60000}
+      AUTH_RATE_IP_LIMIT: ${AUTH_RATE_IP_LIMIT:-60}
+      AUTH_RATE_ACCOUNT_LIMIT: ${AUTH_RATE_ACCOUNT_LIMIT:-10}
+      AUTH_RATE_REGISTER_LIMIT: ${AUTH_RATE_REGISTER_LIMIT:-20}
     volumes: [identity-data:/app/data]
     healthcheck:
       <<: *http-health
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8001/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8001/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
     restart: unless-stopped
 
   driver:
+    <<: *app-runtime
     build: ../src/driver-service
     environment:
       JWT_SECRET: ${JWT_SECRET}
@@ -76,10 +88,11 @@ services:
       postgres: {condition: service_healthy}
     healthcheck:
       <<: *http-health
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8002/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8002/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
     restart: unless-stopped
 
   matching:
+    <<: *app-runtime
     build: ../src/matching-service
     environment:
       <<: *broker-env
@@ -98,10 +111,11 @@ services:
       rabbitmq: {condition: service_healthy}
     healthcheck:
       <<: *http-health
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8004/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8004/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
     restart: unless-stopped
 
   trip:
+    <<: *app-runtime
     build:
       context: ..
       dockerfile: src/trip-service/Dockerfile
@@ -123,10 +137,11 @@ services:
       identity: {condition: service_healthy}
     healthcheck:
       <<: *http-health
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8003/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8003/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
     restart: unless-stopped
 
   payment:
+    <<: *app-runtime
     build:
       context: ..
       dockerfile: src/payment-service/Dockerfile
@@ -141,10 +156,11 @@ services:
       postgres: {condition: service_healthy}
     healthcheck:
       <<: *http-health
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8005/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8005/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
     restart: unless-stopped
 
   gateway:
+    <<: *app-runtime
     build: ../src/api-gateway
     environment:
       IDENTITY_URL: http://identity:8001
@@ -152,13 +168,14 @@ services:
       TRIP_URL: http://trip:8003
       PAYMENT_URL: http://payment:8005
       DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY}
+      RATE_PROXY_KEY: ${RATE_PROXY_KEY:-}
     ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
     depends_on:
       payment: {condition: service_healthy}
       trip: {condition: service_healthy}
     healthcheck:
       <<: *http-health
-      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
     restart: unless-stopped
 
 volumes:

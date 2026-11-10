@@ -16,6 +16,8 @@ function serviceBroker({ url, connect, queue, consume }) {
   const exchange = process.env.RABBITMQ_EXCHANGE || 'trip.exchange';
   const dlx = process.env.RABBITMQ_DLX || 'trip.dlx';
   const dlq = process.env.RABBITMQ_DLQ || 'trip.dlq';
+  const managed = process.env.RABBITMQ_MANAGED_TOPOLOGY === '1';
+  const retryExchange = managed ? `${queue}.retry` : '';
   const abort = new AbortController();
   let channel;
   let send;
@@ -23,29 +25,35 @@ function serviceBroker({ url, connect, queue, consume }) {
   async function loop() {
     while (!abort.signal.aborted) {
       let connection;
+      let consumer;
+      let activeChannel;
+      const inFlight = new Set();
       let closed = false;
       try {
         connection = await connect(url, { timeout: 3000 });
         connection.on('error', () => {});
         connection.on('close', () => { closed = true; });
         const ch = await connection.createConfirmChannel();
+        activeChannel = ch;
         ch.on('error', () => {});
         ch.on('close', () => { closed = true; });
-        await ch.assertExchange(exchange, 'topic', { durable: true });
-        await ch.assertExchange(dlx, 'topic', { durable: true });
-        await ch.assertQueue(dlq, { durable: true });
-        await ch.bindQueue(dlq, dlx, '#');
-        await ch.assertQueue('trip.queue', { durable: true, deadLetterExchange: dlx });
-        for (const key of tripTopics) await ch.bindQueue('trip.queue', exchange, key);
-        await ch.assertQueue('payment.queue', { durable: true, deadLetterExchange: dlx });
-        for (const key of paymentTopics) {
-          await ch.bindQueue('payment.queue', exchange, key);
-        }
-        for (const key of subscriptions) {
-          for (const delay of retryDelays) {
-            await ch.assertQueue(retryQueue(queue, key, delay), {
-              durable: true, messageTtl: delay, deadLetterExchange: exchange, deadLetterRoutingKey: key,
-            });
+        if (!managed) {
+          await ch.assertExchange(exchange, 'topic', { durable: true });
+          await ch.assertExchange(dlx, 'topic', { durable: true });
+          await ch.assertQueue(dlq, { durable: true });
+          await ch.bindQueue(dlq, dlx, '#');
+          await ch.assertQueue('trip.queue', { durable: true, deadLetterExchange: dlx });
+          for (const key of tripTopics) await ch.bindQueue('trip.queue', exchange, key);
+          await ch.assertQueue('payment.queue', { durable: true, deadLetterExchange: dlx });
+          for (const key of paymentTopics) {
+            await ch.bindQueue('payment.queue', exchange, key);
+          }
+          for (const key of subscriptions) {
+            for (const delay of retryDelays) {
+              await ch.assertQueue(retryQueue(queue, key, delay), {
+                durable: true, messageTtl: delay, deadLetterExchange: exchange, deadLetterRoutingKey: key,
+              });
+            }
           }
         }
         await ch.prefetch(queue === 'payment.queue' ? 8 : 1);
@@ -71,7 +79,7 @@ function serviceBroker({ url, connect, queue, consume }) {
             reject(error);
           }
         });
-        await ch.consume(queue, async message => {
+        async function handle(message) {
           if (!message) { closed = true; return; }
           let body;
           try {
@@ -93,13 +101,21 @@ function serviceBroker({ url, connect, queue, consume }) {
                 ch.nack(message, false, false);
                 return;
               }
-              await publish('', retryQueue(queue, body.event_type, retryDelays[attempt]), message.content,
+              await publish(retryExchange, retryQueue(queue, body.event_type, retryDelays[attempt]), message.content,
                 { 'x-ds03-retry': attempt + 1 });
             }
             ch.ack(message);
           } catch {
             closed = true;
           }
+        }
+        consumer = await ch.consume(queue, message => {
+          const pending = handle(message);
+          inFlight.add(pending);
+          void pending.then(() => inFlight.delete(pending), () => {
+            inFlight.delete(pending);
+            closed = true;
+          });
         });
         channel = ch;
         send = envelope => publish(exchange, envelope.event_type, Buffer.from(JSON.stringify(envelope)));
@@ -109,6 +125,12 @@ function serviceBroker({ url, connect, queue, consume }) {
       } finally {
         channel = undefined;
         send = undefined;
+        if (abort.signal.aborted && consumer) {
+          await Promise.race([
+            activeChannel.cancel(consumer.consumerTag).then(() => Promise.allSettled(inFlight)).catch(() => {}),
+            pause(8000, undefined, { ref: false }),
+          ]);
+        }
         await connection?.close().catch(() => {});
       }
       if (!abort.signal.aborted) await pause(1000, undefined, { signal: abort.signal }).catch(() => {});

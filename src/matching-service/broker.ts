@@ -35,28 +35,36 @@ function publisher(channel: ConfirmChannel) {
 
 export async function brokerLoop(matching: Matching, url: string, exchange: string, dlx: string, dlq: string,
   signal: AbortSignal, setReady: (ready: boolean) => void) {
+  const managed = process.env.RABBITMQ_MANAGED_TOPOLOGY === '1';
+  const retryExchange = managed ? 'matching.queue.retry' : '';
   while (!signal.aborted) {
     let connection;
+    let activeChannel: ConfirmChannel | undefined;
+    let consumerTag: string | undefined;
+    const inFlight = new Set<Promise<void>>();
     let closed = false;
     try {
       connection = await connect(url, { timeout: 3000 });
       connection.on('error', () => {});
       connection.on('close', () => { closed = true; });
       const channel = await connection.createConfirmChannel();
+      activeChannel = channel;
       channel.on('error', () => {});
       channel.on('close', () => { closed = true; });
       const publish = publisher(channel);
-      await channel.assertExchange(exchange, 'topic', { durable: true });
-      await channel.assertExchange(dlx, 'topic', { durable: true });
-      await channel.assertQueue(dlq, { durable: true });
-      await channel.bindQueue(dlq, dlx, '#');
-      await channel.assertQueue(matchingQueue, { durable: true, deadLetterExchange: dlx });
-      for (const key of [created, released]) {
-        await channel.bindQueue(matchingQueue, exchange, key);
-        for (const delay of retryDelays) {
-          await channel.assertQueue(retryQueue(key, delay), {
-            durable: true, messageTtl: delay, deadLetterExchange: exchange, deadLetterRoutingKey: key,
-          });
+      if (!managed) {
+        await channel.assertExchange(exchange, 'topic', { durable: true });
+        await channel.assertExchange(dlx, 'topic', { durable: true });
+        await channel.assertQueue(dlq, { durable: true });
+        await channel.bindQueue(dlq, dlx, '#');
+        await channel.assertQueue(matchingQueue, { durable: true, deadLetterExchange: dlx });
+        for (const key of [created, released]) {
+          await channel.bindQueue(matchingQueue, exchange, key);
+          for (const delay of retryDelays) {
+            await channel.assertQueue(retryQueue(key, delay), {
+              durable: true, messageTtl: delay, deadLetterExchange: exchange, deadLetterRoutingKey: key,
+            });
+          }
         }
       }
       await channel.prefetch(8);
@@ -79,18 +87,21 @@ export async function brokerLoop(matching: Matching, url: string, exchange: stri
             channel.nack(message, false, false);
             return;
           }
-          await publish('', retryQueue(parsed.event_type, retryDelays[attempt]), message.content,
+          await publish(retryExchange, retryQueue(parsed.event_type, retryDelays[attempt]), message.content,
             { 'x-ds03-retry': attempt + 1 });
         }
         channel.ack(message);
       };
-      await channel.consume(matchingQueue, message => {
+      const consumer = await channel.consume(matchingQueue, message => {
         if (!message) { closed = true; return; }
-        void consume(message).catch(() => {
+        const pending = consume(message).catch(() => {
           // Close the channel so RabbitMQ can redeliver unacknowledged messages.
           closed = true;
         });
+        inFlight.add(pending);
+        void pending.then(() => inFlight.delete(pending));
       });
+      consumerTag = consumer.consumerTag;
       setReady(true);
       while (!closed && !signal.aborted) {
         const { rows } = await matching.pool.query(`
@@ -106,6 +117,12 @@ export async function brokerLoop(matching: Matching, url: string, exchange: stri
       if (!signal.aborted) console.error('matching-service: RabbitMQ disconnected or publish failed');
     } finally {
       setReady(false);
+      if (signal.aborted && activeChannel && consumerTag) {
+        await Promise.race([
+          activeChannel.cancel(consumerTag).then(() => Promise.allSettled(inFlight)).catch(() => {}),
+          pause(8000, undefined, { ref: false }),
+        ]);
+      }
       await connection?.close().catch(() => {});
     }
     if (!signal.aborted) await pause(1000, undefined, { signal }).catch(() => {});

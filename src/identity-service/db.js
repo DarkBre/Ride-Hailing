@@ -43,6 +43,12 @@ function initDatabase(customDbPath = null) {
       expires_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist(expires_at);
+    CREATE TABLE IF NOT EXISTS auth_rate_buckets (
+      bucket TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_rate_expiry ON auth_rate_buckets(expires_at);
   `);
 
   return {

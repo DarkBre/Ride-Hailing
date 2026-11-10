@@ -6,11 +6,13 @@ const crypto = require('node:crypto');
 const config = require('./config');
 const { initDatabase } = require('./db');
 const { createRoutes } = require('./routes');
+const { authLimiter } = require('./rate-limit');
 
 function createIdentityService(options = {}) {
   const port = options.port || config.PORT;
   const db = initDatabase(options.dbPath || null);
   const routes = createRoutes(db);
+  const limit = authLimiter(db, options.rateLimit);
 
   const server = http.createServer({ requestTimeout: 10_000, headersTimeout: 5000 }, async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -31,6 +33,15 @@ function createIdentityService(options = {}) {
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
+    if (req.method === 'GET' && (pathname === '/live' || pathname === '/ready')) {
+      try {
+        if (pathname === '/ready') db.get('SELECT 1');
+        res.writeHead(200).end();
+      } catch {
+        res.writeHead(503).end();
+      }
+      return;
+    }
     const method = req.method;
 
     // Chuẩn format JSON theo CONTRACTS.md Section 1.1
@@ -89,6 +100,14 @@ function createIdentityService(options = {}) {
 
     // 5. Thực thi handler
     try {
+      const action = pathname.match(/^(?:\/api\/v1)?\/auth\/(login|register)$/)?.[1];
+      if (req.method === 'POST' && action) {
+        const retryAfter = limit(action, req, body?.email);
+        if (retryAfter) {
+          res.setHeader('Retry-After', retryAfter);
+          return sendJson(429, false, null, { code: 'RATE_LIMITED', message: 'Thử lại sau' });
+        }
+      }
       const data = await matched.handler({
         req,
         res,
@@ -127,10 +146,9 @@ function createIdentityService(options = {}) {
     },
     stop() {
       return new Promise((resolve) => {
-        if (typeof server.closeAllConnections === 'function') {
-          server.closeAllConnections();
-        }
+        const timeout = setTimeout(() => server.closeAllConnections(), 10_000).unref();
         server.close(() => {
+          clearTimeout(timeout);
           try {
             db.close();
           } catch (_) {}
@@ -144,6 +162,8 @@ function createIdentityService(options = {}) {
 // Chạy trực tiếp qua node src/identity-service/index.js
 if (require.main === module) {
   const service = createIdentityService();
+  process.once('SIGINT', () => void service.stop());
+  process.once('SIGTERM', () => void service.stop());
   service.start();
 }
 

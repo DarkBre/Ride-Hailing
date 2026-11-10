@@ -96,7 +96,8 @@ export function driverServer(pool: Pool, settings: Settings) {
     };
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
-      if (req.method === 'GET' && url.pathname === '/health') {
+      if (req.method === 'GET' && url.pathname === '/live') return send(200, { status: 'live' });
+      if (req.method === 'GET' && ['/health', '/ready'].includes(url.pathname)) {
         await pool.query('SELECT 1');
         return send(200, { status: 'ready' });
       }

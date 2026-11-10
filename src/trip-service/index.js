@@ -26,6 +26,7 @@ function createTripService(options = {}) {
   const routes = createRoutes(db, sagaCoordinator, outboxManager);
   const internalEvents = routes.find(route => route.path === '/internal/events');
   let timeoutWorker;
+  let brokerWorker;
 
   const server = http.createServer({ requestTimeout: 10_000, headersTimeout: 5000 }, async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -46,6 +47,16 @@ function createTripService(options = {}) {
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname;
+    if (req.method === 'GET' && (pathname === '/live' || pathname === '/ready')) {
+      try {
+        // Bookings can commit to the local outbox during broker downtime.
+        if (pathname === '/ready') db.get('SELECT 1');
+        res.writeHead(200).end();
+      } catch {
+        res.writeHead(503).end();
+      }
+      return;
+    }
     const method = req.method;
 
     const sendJson = (statusCode, success, data, error = null) => {
@@ -172,7 +183,7 @@ function createTripService(options = {}) {
     start() {
       return new Promise((resolve) => {
         outboxManager.startWorker(1000);
-        if (broker) void broker.loop();
+        if (broker) brokerWorker = broker.loop();
         if (process.env.DRIVER_TRIP_KEY) {
           timeoutWorker = setInterval(() => {
             try { sagaCoordinator.expireReservations(); } catch { console.error('trip-service: expiry failed'); }
@@ -187,13 +198,13 @@ function createTripService(options = {}) {
     },
     stop() {
       return new Promise((resolve) => {
-        outboxManager.stopWorker();
         clearInterval(timeoutWorker);
-        broker?.stop();
-        if (typeof server.closeAllConnections === 'function') {
-          server.closeAllConnections();
-        }
-        server.close(() => {
+        const timeout = setTimeout(() => server.closeAllConnections(), 10_000).unref();
+        server.close(async () => {
+          clearTimeout(timeout);
+          await outboxManager.stopWorker();
+          broker?.stop();
+          await brokerWorker;
           try {
             db.close();
           } catch (_) {}
@@ -206,6 +217,8 @@ function createTripService(options = {}) {
 
 if (require.main === module) {
   const service = createTripService();
+  process.once('SIGINT', () => void service.stop());
+  process.once('SIGTERM', () => void service.stop());
   service.start();
 }
 

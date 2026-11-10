@@ -14,7 +14,8 @@ export function matchingServer(matching: Matching, key: string, ready: () => boo
       res.end(JSON.stringify(data));
     };
     try {
-      if (req.method === 'GET' && req.url === '/health') {
+      if (req.method === 'GET' && req.url === '/live') return reply(200, { status: 'live' });
+      if (req.method === 'GET' && ['/health', '/ready'].includes(req.url ?? '')) {
         await matching.pool.query('SELECT 1');
         return reply(ready() ? 200 : 503, { database: 'ready', rabbitmq: ready() ? 'ready' : 'unavailable' });
       }

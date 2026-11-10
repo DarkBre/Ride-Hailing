@@ -1,24 +1,41 @@
 'use strict';
 
 const { createServer } = require('node:http');
-const { randomUUID } = require('node:crypto');
+const { createServer: createSecureServer } = require('node:https');
+const { readFileSync } = require('node:fs');
+const { createHmac, randomUUID } = require('node:crypto');
 const { pipeline } = require('node:stream/promises');
 const { Readable } = require('node:stream');
 
-function gateway({ identity, driver, trip, payment, driverKey }) {
-  return createServer({ requestTimeout: 10000, headersTimeout: 5000 }, async (req, res) => {
+function gateway({ identity, driver, trip, payment, driverKey, rateProxyKey, tls }) {
+  const serve = tls ? createSecureServer : createServer;
+  return serve({ ...tls, requestTimeout: 10000, headersTimeout: 5000 }, async (req, res) => {
     const supplied = req.headers['x-correlation-id'];
     const trace = typeof supplied === 'string' && /^[\w.-]{1,100}$/.test(supplied) ? supplied : randomUUID();
     res.setHeader('x-correlation-id', trace);
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('cache-control', 'no-store');
+    if (tls && process.env.GATEWAY_HSTS === '1') {
+      res.setHeader('strict-transport-security', 'max-age=31536000');
+    }
     function reply(status, code) {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ success: status < 400, error: code ? { code } : null, meta: { correlation_id: trace } }));
     }
     try {
       const path = new URL(req.url, 'http://localhost');
-      if (req.method === 'GET' && path.pathname === '/health') return reply(200);
+      if (req.method === 'GET' && ['/health', '/live'].includes(path.pathname)) return reply(200);
+      if (req.method === 'GET' && path.pathname === '/ready') {
+        try {
+          const responses = await Promise.all([identity, driver, trip, payment].filter(Boolean).map(url =>
+            fetch(new URL('/ready', url), { signal: AbortSignal.timeout(1500) })));
+          const ready = responses.every(response => response.ok);
+          await Promise.all(responses.map(response => response.body?.cancel()));
+          return reply(ready ? 200 : 503, ready ? null : 'DEPENDENCY_UNAVAILABLE');
+        } catch {
+          return reply(503, 'DEPENDENCY_UNAVAILABLE');
+        }
+      }
       const route = path.pathname.replace(/^\/api\/v1(?=\/)/, '');
       if (route === path.pathname) return reply(404, 'NOT_FOUND');
       const signature = `${req.method} ${route}`;
@@ -38,6 +55,11 @@ function gateway({ identity, driver, trip, payment, driverKey }) {
       } else return reply(404, 'NOT_FOUND');
       if (!target) return reply(503, 'UPSTREAM_UNAVAILABLE');
       const headers = { 'x-correlation-id': trace };
+      if (publicAuth && rateProxyKey && req.socket.remoteAddress) {
+        const address = req.socket.remoteAddress;
+        headers['x-ds03-client-ip'] = address;
+        headers['x-ds03-client-signature'] = createHmac('sha256', rateProxyKey).update(address).digest('hex');
+      }
       for (const header of ['authorization', 'content-type', 'idempotency-key']) {
         if (typeof req.headers[header] === 'string') headers[header] = req.headers[header];
       }
@@ -83,8 +105,19 @@ function gateway({ identity, driver, trip, payment, driverKey }) {
 if (require.main === module) {
   const { IDENTITY_URL, DRIVER_URL, TRIP_URL, PAYMENT_URL, DRIVER_INTERNAL_KEY, GATEWAY_PORT } = process.env;
   if (!IDENTITY_URL || !DRIVER_URL || !TRIP_URL || !DRIVER_INTERNAL_KEY) throw new Error('Missing Gateway configuration');
-  gateway({ identity: IDENTITY_URL, driver: DRIVER_URL, trip: TRIP_URL, payment: PAYMENT_URL,
-    driverKey: DRIVER_INTERNAL_KEY }).listen(Number(GATEWAY_PORT || 8080));
+  const cert = process.env.GATEWAY_TLS_CERT;
+  const key = process.env.GATEWAY_TLS_KEY;
+  if (Boolean(cert) !== Boolean(key)) throw new Error('Both Gateway TLS files are required');
+  const tls = cert && { cert: readFileSync(cert), key: readFileSync(key), minVersion: 'TLSv1.2' };
+  const server = gateway({ identity: IDENTITY_URL, driver: DRIVER_URL, trip: TRIP_URL, payment: PAYMENT_URL,
+    driverKey: DRIVER_INTERNAL_KEY, rateProxyKey: process.env.RATE_PROXY_KEY, tls });
+  server.listen(Number(GATEWAY_PORT || 8080));
+  const shutdown = () => {
+    const timeout = setTimeout(() => server.closeAllConnections(), 10_000).unref();
+    server.close(() => clearTimeout(timeout));
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 module.exports = { gateway };

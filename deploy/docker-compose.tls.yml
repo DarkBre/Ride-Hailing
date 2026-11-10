@@ -1,0 +1,10 @@
+services:
+  gateway:
+    environment:
+      GATEWAY_TLS_CERT: /run/gateway-tls/fullchain.pem
+      GATEWAY_TLS_KEY: /run/gateway-tls/privkey.pem
+      GATEWAY_HSTS: ${GATEWAY_HSTS:-0}
+    volumes:
+      - ${GATEWAY_TLS_DIR:?set GATEWAY_TLS_DIR}:/run/gateway-tls:ro
+    healthcheck:
+      test: [CMD, node, -e, "require('node:https').get({host:'127.0.0.1',port:8080,path:'/ready',rejectUnauthorized:false},r=>{r.resume();process.exit(+!(r.statusCode===200))}).on('error',()=>process.exit(1))"]
