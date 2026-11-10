@@ -1,0 +1,243 @@
+name: ds03
+
+x-healthcheck-common: &healthcheck-common
+  interval: 5s
+  timeout: 4s
+  retries: 15
+  start_period: 10s
+
+x-app-common: &app-common
+  stop_grace_period: 20s
+  networks:
+    - ds03-network
+  restart: unless-stopped
+
+services:
+  # ============================================================================
+  # 1. INFRASTRUCTURE SERVICES (Owned by TV3)
+  # ============================================================================
+  postgres:
+    image: postgres:17-bookworm
+    container_name: ds03-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secret_password}
+      POSTGRES_DB: postgres
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:-identity_secret_password}
+      DRIVER_DB_PASSWORD: ${DRIVER_DB_PASSWORD:-driver_secret_password}
+      MATCHING_DB_PASSWORD: ${MATCHING_DB_PASSWORD:-matching_secret_password}
+      TRIP_DB_PASSWORD: ${TRIP_DB_PASSWORD:-trip_secret_password}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_secret_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-postgres.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      <<: *healthcheck-common
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-postgres}"]
+    <<: *app-common
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: ds03-rabbitmq
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq-definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      <<: *healthcheck-common
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+    <<: *app-common
+
+  # ============================================================================
+  # 2. TV3 OWNED MICROSERVICES & DASHBOARD
+  # ============================================================================
+  payment:
+    <<: *app-common
+    build:
+      context: ../src/payment-service
+      dockerfile: Dockerfile
+    container_name: ds03-payment
+    environment:
+      PORT: 8005
+      PAYMENT_SERVICE_PORT: 8005
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      PAYMENT_DB_NAME: payment_db
+      POSTGRES_USER: payment_service
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_secret_password}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      RABBITMQ_EXCHANGE: trip.exchange
+      RABBITMQ_DLX: trip.dlx
+      RABBITMQ_DLQ: trip.dlq
+      IDENTITY_URL: http://identity:8001
+      INTERNAL_KEY: ${INTERNAL_KEY:-dev-internal-service-key-ds03}
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-common
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8005/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+
+  gateway:
+    <<: *app-common
+    build:
+      context: ../src/api-gateway
+      dockerfile: Dockerfile
+    container_name: ds03-gateway
+    environment:
+      PORT: 8080
+      GATEWAY_PORT: 8080
+      IDENTITY_URL: http://identity:8001
+      DRIVER_URL: http://driver:8002
+      TRIP_URL: http://trip:8003
+      MATCHING_URL: http://matching:8004
+      PAYMENT_URL: http://payment:8005
+      DASHBOARD_URL: http://dashboard:3000
+      INTERNAL_KEY: ${INTERNAL_KEY:-dev-internal-service-key-ds03}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-dev-internal-service-key-ds03}
+    ports:
+      - "8080:8080"
+    depends_on:
+      payment:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-common
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+
+  dashboard:
+    <<: *app-common
+    build:
+      context: ../src/web-dashboard
+      dockerfile: Dockerfile
+    container_name: ds03-dashboard
+    environment:
+      PORT: 3000
+      DASHBOARD_PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-common
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+
+  # ============================================================================
+  # 3. TV1 & TV2 SERVICES PLACEHOLDERS (Joined during integration)
+  # ============================================================================
+  identity:
+    <<: *app-common
+    build:
+      context: ../src/identity-service
+      dockerfile: Dockerfile
+    container_name: ds03-identity
+    environment:
+      PORT: 8001
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
+      INTERNAL_KEY: ${INTERNAL_KEY:-dev-internal-service-key-ds03}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: identity_service
+      POSTGRES_PASSWORD: ${IDENTITY_DB_PASSWORD:-identity_secret_password}
+      DATA_DIR: /app/data
+    ports:
+      - "8001:8001"
+    volumes:
+      - identity-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - full
+
+  driver:
+    <<: *app-common
+    build:
+      context: ../src/driver-service
+      dockerfile: Dockerfile
+    container_name: ds03-driver
+    environment:
+      PORT: 8002
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: driver_service
+      POSTGRES_PASSWORD: ${DRIVER_DB_PASSWORD:-driver_secret_password}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-dev-internal-service-key-ds03}
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY:-dev-driver-trip-key-ds03}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - full
+
+  matching:
+    <<: *app-common
+    build:
+      context: ../src/matching-service
+      dockerfile: Dockerfile
+    container_name: ds03-matching
+    environment:
+      PORT: 8004
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: matching_service
+      POSTGRES_PASSWORD: ${MATCHING_DB_PASSWORD:-matching_secret_password}
+      DRIVER_URL: http://driver:8002
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+    ports:
+      - "8004:8004"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      driver:
+        condition: service_started
+    profiles:
+      - full
+
+  trip:
+    <<: *app-common
+    build:
+      context: ../src/trip-service
+      dockerfile: Dockerfile
+    container_name: ds03-trip
+    environment:
+      PORT: 8003
+      DATA_DIR: /app/data
+      URL_IDENTITY: http://identity:8001
+      URL_DRIVER: http://driver:8002
+      URL_MATCHING: http://matching:8004
+      URL_PAYMENT: http://payment:8005
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+    ports:
+      - "8003:8003"
+    volumes:
+      - trip-data:/app/data
+    depends_on:
+      payment:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    profiles:
+      - full
+
+networks:
+  ds03-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  rabbit-data:
+  identity-data:
+  trip-data:
