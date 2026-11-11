@@ -1,6 +1,6 @@
 # INTEGRATION CHECKLIST: HỢP NHẤT 3 NHÁNH CHO BẢN FINAL MVP (MỤC 7.1–7.4)
 
-Tài liệu này hướng dẫn chi tiết cách ghép code từ 3 nhánh GitHub (`origin/main`, `feature/tv1-identity-trip`, `feature/tv2-driver-matching`) theo **ADR-007 (Cách 1)** để chạy toàn vẹn hệ thống qua Docker Compose, đồng thời tránh đè code hoặc sót contract.
+Tài liệu này hướng dẫn chi tiết cách ghép code từ 3 nhánh GitHub (`feature/tv3-payment-gateway-dashboard`, `feature/tv1-identity-trip`, `feature/tv2-driver-matching`) lên nhánh tích hợp mới tách từ `origin/main` theo **ADR-007 (Cách 1)** để chạy toàn vẹn hệ thống qua Docker Compose, đồng thời tránh đè code hoặc sót contract.
 
 ---
 
@@ -8,7 +8,7 @@ Tài liệu này hướng dẫn chi tiết cách ghép code từ 3 nhánh GitHub
 
 | Nguồn | File / Thư mục lấy vào bản Final | File **KHÔNG** lấy để tránh xung đột / phức tạp 7.5 |
 |---|---|---|
-| **`origin/main`** (TV3) | `src/payment-service/`, `src/api-gateway/`, `src/web-dashboard/`, `deploy/docker-compose.yml`, `deploy/init-postgres.sh`, `deploy/rabbitmq.conf`, `deploy/rabbitmq-definitions.json` | *(Làm nền gốc của nhánh tích hợp)* |
+| **`origin/feature/tv3-payment-gateway-dashboard`** (TV3, `2b8ad2f` / sau khi TV3 chuẩn hoá) | `src/payment-service/`, `src/api-gateway/`, `src/web-dashboard/`, `deploy/docker-compose.yml`, `deploy/init-postgres.sh`, `deploy/rabbitmq.conf`, `deploy/rabbitmq-definitions.json`, `tests/*tv3*` | *(Gỡ binding `trip.event.release_driver` ở Payment trước khi chạy chung; `PR #1` đã được hoàn tác khỏi `main` để kiểm thử & chuẩn hoá)* |
 | **`origin/feature/tv1-identity-trip`** (`ab90ebd`) | `src/identity-service/`, `src/trip-service/`, `tests/identity.test.js`, `tests/trip.test.js`, `tests/saga.test.js`, `tests/run-all-tv1.js` | Không dùng bản `trip-service` cũ `8758e74` bên nhánh TV2 (bị hụt các vá bảo mật `ab90ebd`). |
 | **`origin/feature/tv2-driver-matching`** (`94ef0eb`) | **Chỉ lấy:** `src/driver-service/`, `src/matching-service/`, `services/_shared/amqp.js` | **KHÔNG lấy** `src/payment-service/`, `src/api-gateway/`, `docker-compose.tls/acl/internal-tls`, `postgres-pitr-drill.sh`, `benchmark-*` trên nhánh TV2. |
 

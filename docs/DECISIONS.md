@@ -48,15 +48,15 @@ Tài liệu này ghi nhận các quyết định thiết kế kiến trúc quan 
 
 ## ADR-006: Giao Diện Giám Sát & Kịch Bản Demo (`Web Dashboard` + Script CLI)
 * **Trạng thái:** ĐÃ PHÊ DUYỆT (APPROVED).
-* **Quyết định:** Giữ lại `API Gateway (:8080)` và `Web Simulation Dashboard (:3000)` đã merge trên `main` (kèm RabbitMQ Management `:15672` và script demo CLI chuẩn hoá), giúp trình bày rõ ràng 9 kịch bản của Mục 7.4 trong 10 phút bảo vệ.
+* **Quyết định:** Giữ lại `API Gateway (:8080)` và `Web Simulation Dashboard (:3000)` của TV3 (trên nhánh `feature/tv3-payment-gateway-dashboard`, kèm RabbitMQ Management `:15672` và script demo CLI chuẩn hoá), giúp trình bày rõ ràng 9 kịch bản của Mục 7.4 trong 10 phút bảo vệ.
 
 ---
 
 ## ADR-007: Chốt Kiến Trúc Tích Hợp Final MVP Mục 7.1–7.4 & Cắt Giảm Phần 7.5 Phức Tạp (Cách 1)
 * **Trạng thái:** ĐÃ PHÊ DUYỆT BỞI CẢ NHÓM (2026-11-12).
-* **Bối cảnh:** Kiểm tra toàn bộ các nhánh GitHub cho thấy TV3 đã merge code `Payment`, `Gateway`, `Dashboard`, `RabbitMQ`, `Postgres` lên `main`; TV2 đã xong `Driver`, `Matching` dùng Postgres/RabbitMQ (kèm nhiều lớp 7.5 nâng cao như Internal TLS, ACL, PITR backup, Chaos scripts); TV1 đã hardening xong `Identity`, `Trip` (bản `ab90ebd` dùng SQLite + Outbox HTTP). Nhóm cần chốt 1 bản hợp nhất gọn nhẹ nhất bảo đảm chạy chắc chắn toàn bộ **Mục 7.1 – 7.4**.
+* **Bối cảnh:** Kiểm tra toàn bộ các nhánh GitHub cho thấy TV3 đã dựng `Payment`, `Gateway`, `Dashboard`, `RabbitMQ`, `Postgres` trên `feature/tv3-payment-gateway-dashboard` (PR #1 từng merge lên `main` nhưng đã hoàn tác bằng `5c7e6ea` để kiểm thử thực tế & chuẩn hoá trước khi hợp nhất chính thức); TV2 đã xong `Driver`, `Matching` dùng Postgres/RabbitMQ (kèm nhiều lớp 7.5 nâng cao như Internal TLS, ACL, PITR backup, Chaos scripts); TV1 đã hardening xong `Identity`, `Trip` (bản `ab90ebd` dùng SQLite + Outbox HTTP). Nhóm cần chốt 1 bản hợp nhất gọn nhẹ nhất bảo đảm chạy chắc chắn toàn bộ **Mục 7.1 – 7.4**.
 * **Quyết định:**
-  1. **Chọn Cách 1 (Hợp nhất trên `Docker Compose + RabbitMQ 4 + PostgreSQL 17 + Node.js >= 22.13.0`)**: Lấy `origin/main` (TV3) làm nền hạ tầng + ghép `driver`/`matching`/`amqp.js` từ nhánh TV2 + ghép `identity`/`trip` mới nhất (`ab90ebd`) từ nhánh TV1.
+  1. **Chọn Cách 1 (Hợp nhất trên `Docker Compose + RabbitMQ 4 + PostgreSQL 17 + Node.js >= 22.13.0`)**: Lấy nhánh TV3 (`feature/tv3-payment-gateway-dashboard`, sau khi chuẩn hoá & kiểm thử thực tế) làm nền hạ tầng + ghép `driver`/`matching`/`amqp.js` từ nhánh TV2 + ghép `identity`/`trip` mới nhất (`ab90ebd`) từ nhánh TV1.
   2. **Gác bỏ khỏi bản Final các lớp 7.5 không bắt buộc dễ gây lỗi vận hành:** Không tích hợp `Internal TLS/mTLS`, `RabbitMQ ACL đa role`, `PITR WAL Backup`, `Chaos scripts` phức tạp từ nhánh TV2 vào `deploy/docker-compose.yml` chuẩn.
   3. **Sửa 5 điểm khớp nối khi hợp nhất code:**
      - Gắn adapter `amqp.js` vào `Trip Service (ab90ebd)` khi có `RABBITMQ_URL`.
