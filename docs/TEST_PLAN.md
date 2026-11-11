@@ -1,91 +1,80 @@
 # TEST PLAN & EVALUATION SPECIFICATION (DS03)
 
-Tài liệu này xác định chiến lược kiểm thử, danh sách kịch bản test bắt buộc theo mục 9 của đặc tả đồ án, cùng phương pháp đo đạc đánh giá hiệu năng hệ thống phân tán.
+Tài liệu này xác định chiến lược kiểm thử và danh mục bài kiểm thử chuẩn hoá theo **Mục 7.4 & Mục 9 của `COURSE PROJECT SPECIFICATION.pdf`** cho toàn bộ nhóm (TV1, TV2, TV3).
 
 ---
 
 ## 1. Chiến Lược Kiểm Thử (Testing Strategy)
 
-Tuân thủ nguyên tắc **"Bằng chứng quan trọng hơn lời tuyên bố"** (Mục 1.6 trong Khung quy trình chuẩn):
-1. **Unit Tests:** Kiểm thử các hàm logic độc lập (Công thức Haversine tính khoảng cách, thuật toán Dynamic Pricing, validation DTO, băm mật khẩu `scrypt` & JWT).
-2. **Contract Tests:** Kiểm thử tính tương thích giữa API client và server, tính đúng đắn của Message Envelope và Data Types.
-3. **Integration & Concurrency Tests:** Sử dụng script tự động mô phỏng nhiều client gọi đồng thời vào API Gateway để kiểm chứng cơ chế **CAS Optimistic Lock** chống tranh chấp tài xế.
-4. **Fault & Recovery Tests:** Sử dụng script can thiệp hạ tầng (ngắt tiến trình service, bật lại service) để kiểm chứng tính bền bỉ của hàng đợi Message Broker và cơ chế bù trừ Saga.
-5. **Performance / Scalability Experiments:** Đo throughput (req/s), độ trễ (latency p95, p99) và tỷ lệ lỗi.
+1. **Unit & Service Integration Tests:** Kiểm thử từng service độc lập với database thật (`node:sqlite` cho TV1; `PostgreSQL` cho TV2/TV3).
+2. **Contract & RabbitMQ Broker Tests:** Xác minh format Message Envelope, Routing Key, `event_id` deduplication, Publisher Confirms, Retry và Dead-Letter Queue (`trip.dlq`).
+3. **Concurrency / Conflict Tests (CT-01, CT-02):** Mô phỏng 2 hành khách đặt cùng lúc 1 tài xế duy nhất và 2 giao dịch hold tiền đồng thời trên cùng 1 ví.
+4. **Fault Tolerance & Recovery Tests (FR-01, FR-02):** Can thiệp tắt tiến trình (`docker stop ds03-payment`), quan sát hàng đợi bền bỉ trên RabbitMQ (`:15672`), bật lại service (`docker start ds03-payment`) để xử lý nốt, và kiểm tra Saga bù trừ.
+5. **End-to-End Acceptance (Mục 7.4):** Chạy xuyên suốt qua `API Gateway (:8080)` trên Docker Compose.
 
 ---
 
-## 2. Danh Sách Các Bài Test Bắt Buộc
+## 2. Danh Sách Các Bài Test Bắt Buộc Theo Đề Tài (Mục 9 PDF)
 
-### 2.1. 08 Bài Functional Tests (Kiểm Thử Chức Năng)
+### 2.1. 08 Bài Functional Tests (FT-01 $\rightarrow$ FT-08)
 
-| Mã Test | Chức năng kiểm thử | Dữ liệu đầu vào & Thao tác | Kết quả mong đợi (Assertion) | Thành viên phụ trách |
-|---|---|---|---|:---:|
-| **FT-01** | Đăng ký tài khoản Passenger & Driver | Gọi `POST /api/v1/auth/register` với email, pass, role | Trả về HTTP 201, password được hash `scrypt` trong `identity.db` | **Thành viên 1** *(Trưởng nhóm)* |
-| **FT-02** | Đăng nhập & Xác thực JWT | Gọi `POST /api/v1/auth/login` với tài khoản vừa tạo | Trả về HTTP 200, JWT token chứa đúng `userId` và `role` | **Thành viên 1** *(Trưởng nhóm)* |
-| **FT-03** | Cập nhật toạ độ GPS tài xế | Driver gửi toạ độ mới qua `PUT /api/v1/drivers/location` | Trả về HTTP 200, toạ độ mới được ghi vào `driver.db` | **Thành viên 2** *(Dương Quốc Hoàng)* |
-| **FT-04** | Đổi trạng thái tài xế | Driver đổi trạng thái sang `AVAILABLE` qua `PUT /api/v1/drivers/status` | `status` trong `driver.db` chuyển sang `AVAILABLE` | **Thành viên 2** *(Dương Quốc Hoàng)* |
-| **FT-05** | Tạo cuốc xe & Định giá động | Passenger gọi `POST /api/v1/trips` với điểm đón và điểm đến | Tạo cuốc thành công với cước tính đúng công thức, state = `REQUESTED`, lưu Outbox | **Thành viên 1** *(Trưởng nhóm)* |
-| **FT-06** | Ghép tài xế gần nhất | Matching Service bắt event `trip.event.created` | Tìm đúng tài xế gần nhất, lock tài xế $\rightarrow$ state = `DRIVER_ASSIGNED` | **Thành viên 2** *(Dương Quốc Hoàng)* |
-| **FT-07** | Tạm giữ cước ví ảo (Saga Hold) | Payment Service bắt event `trip.event.driver_matched` | Số dư khả dụng giảm đúng số tiền cước, `held_balance` tăng tương ứng | **Thành viên 2** *(Dương Quốc Hoàng)* |
-| **FT-08** | Hoàn tất cuốc xe & Trừ tiền | Driver bấm hoàn thành `POST /api/v1/trips/:id/complete` | State = `COMPLETED`, tiền từ `held_balance` bị capture chính thức | **Thành viên 3** *(Quang)* |
+| Mã Test | Chức năng kiểm thử | Dữ liệu đầu vào & Thao tác | Kết quả mong đợi (Assertion) | Chủ sở hữu |
+|---|---|---|---|---|
+| **FT-01** | Đăng ký tài khoản Passenger & Driver | `POST /api/v1/auth/register` (`email`, `password`, `role`) | `HTTP 201`, mật khẩu hash `scrypt` trong `user_db.sqlite`, không trả `password_hash`. | **TV1** |
+| **FT-02** | Đăng nhập & Xác thực JWT | `POST /api/v1/auth/login` | `HTTP 200`, token JWT HS256 chứa `userId`, `user_id`, `role`, `exp`; logout lưu SHA-256 hash vào `token_blacklist`. | **TV1** |
+| **FT-03** | Cập nhật toạ độ GPS tài xế | Driver gửi JWT `PUT /api/v1/drivers/location` | `HTTP 200`, lưu `(latitude, longitude)` và `location_updated_at` vào `driver_db`. | **TV2** |
+| **FT-04** | Đổi trạng thái tài xế | Driver gửi `PUT /api/v1/drivers/status` (`AVAILABLE`/`OFFLINE`) | `driver_db.drivers.status` cập nhật đúng; tự đặt `BUSY` bị chặn `403`. | **TV2** |
+| **FT-05** | Tạo cuốc xe & Định giá động | Passenger gửi JWT `POST /api/v1/trips` | `HTTP 201`, `status = 'REQUESTED'`, tính đúng Haversine + Surge, lưu `trip_db` & Outbox `trip.event.created`. | **TV1** |
+| **FT-06** | Ghép tài xế gần nhất | Matching (`:8004`) tiêu thụ `trip.event.created` từ RabbitMQ | Tìm tài xế `AVAILABLE`, khoá reservation `HELD` tại Driver (`:8002`), bắn `trip.event.driver_matched` $\rightarrow$ `DRIVER_ASSIGNED`. | **TV2** |
+| **FT-07** | Tạm giữ cước ví ảo (Saga Hold) | Payment (`:8005`) tiêu thụ `payment.event.hold_requested` | Trừ `balance`, tăng `held_balance` trong `payment_db`, bắn `payment.event.hold_success` $\rightarrow$ Trip `CONFIRMED`. | **TV3** |
+| **FT-08** | Hoàn tất cuốc xe, Capture & Nhả xe | Driver được gán gọi `/accept` $\rightarrow$ `/start` $\rightarrow$ `/complete` | Trip `COMPLETED`, bắn `trip.event.completed` $\rightarrow$ Payment `CAPTURED` tiền thật, Driver nhả về `AVAILABLE`, Notification ghi log. | **TV1 + TV3** |
 
----
+### 2.2. 02 Bài Concurrency / Conflict Tests (TV2 phụ trách chính)
 
-### 2.2. 02 Bài Concurrency / Conflict Tests (Thành viên 2 - Dương Quốc Hoàng phụ trách)
+* **CT-01: Hai hành khách tranh chấp đồng thời 1 tài xế duy nhất**
+  * *Thiết lập:* Toàn hệ thống chỉ có **1 tài xế ($D_1$)** trạng thái `AVAILABLE`.
+  * *Thao tác:* Bắn đồng thời (`Promise.all`) 2 request `POST /api/v1/trips` từ $P_1$ và $P_2$ tại cùng toạ độ.
+  * *Assertion:* Chỉ **1 cuốc** khoá thành công reservation qua `FOR UPDATE SKIP LOCKED` + CAS `version` tại `driver_db` và đạt `CONFIRMED`; cuốc còn lại nhận `CANCELLED / NO_DRIVER_AVAILABLE`. Tuyệt đối không gán trùng $D_1$.
+* **CT-02: Hai lệnh tạm giữ cước đồng thời trên cùng 1 ví**
+  * *Thiết lập:* Ví có số dư `50.000 đ`.
+  * *Thao tác:* Phát đồng thời 2 lệnh `hold_requested` mỗi lệnh `40.000 đ`.
+  * *Assertion:* Nhờ `SELECT ... FOR UPDATE` trên `wallets` và `CHECK (balance >= 0)`, đúng 1 lệnh `hold_success` (còn `10.000 đ`), lệnh còn lại `hold_failed` (`INSUFFICIENT_FUNDS`).
 
-* **CT-01: Hai hành khách tranh chấp cùng một tài xế duy nhất (Owner: Dương Quốc Hoàng)**
-  * **Thiết lập:** Khởi tạo hệ thống chỉ có **1 tài xế duy nhất ($D_1$)** đang ở trạng thái `AVAILABLE`.
-  * **Hành động:** Bắn đồng thời 2 HTTP requests tạo cuốc xe từ 2 khách hàng ($P_1$ và $P_2$) tới cùng khu vực của $D_1$ trong cùng khoảng thời gian $\le 5$ ms.
-  * **Kiểm chứng:**
-    1. Chỉ duy nhất một khách hàng ($P_1$ hoặc $P_2$) nhận được cuốc với tài xế $D_1$.
-    2. Khách hàng còn lại nhận kết quả `{ matched: false, status: 'no_driver' }` hợp lệ (không bị crash hay gán trùng xe).
-    3. Trạng thái của $D_1$ trong `driver.db` chỉ chuyển sang `BUSY` một lần nhờ CAS Optimistic Lock, không có race condition.
-* **CT-02: Hai request nạp tiền / thanh toán đồng thời trên cùng 1 ví (Owner: Dương Quốc Hoàng)**
-  * **Thiết lập:** Ví có số dư 50,000 VNĐ.
-  * **Hành động:** Bắn đồng thời 2 request trừ tiền tạm giữ 40,000 VNĐ từ 2 cuốc xe khác nhau.
-  * **Kiểm chứng:** Chỉ 1 request thành công, request thứ hai bị từ chối do không đủ số dư khả dụng (Không xảy ra lỗi số dư bị âm).
+### 2.3. 02 Bài Fault & Recovery Tests (TV3 phụ trách chính, phối hợp TV1/TV2)
 
----
+* **FR-01: Sập Service giữa luồng & Phục hồi từ RabbitMQ (`durable` queue)**
+  * *Thao tác:* Cho chạy đặt xe rồi tắt ngay container `Payment Service` (`docker stop ds03-payment`) trước khi message trong `payment.queue` được đọc.
+  * *Assertion:* Các service khác không crash; RabbitMQ UI (`:15672`) hiển thị message nằm an toàn trong `payment.queue`. Khi chạy `docker start ds03-payment`, Payment tự động tiêu thụ message tồn đọng và đưa cuốc xe sang `CONFIRMED`.
+* **FR-02: Saga Bù trừ & Dead-Letter Queue (`trip.dlq`)**
+  * *Kịch bản Bù trừ:* Khách có số dư `0 đ` đặt xe $\rightarrow$ `Matching` khoá xe (`RESERVED`) $\rightarrow$ `Payment` bắn `payment.event.hold_failed` $\rightarrow$ `Trip` chuyển `CANCELLED` và bắn `trip.event.release_driver` $\rightarrow$ `Driver` trả $D_1$ về `AVAILABLE`. (Kiểm tra thêm race condition `hold_success` đến muộn sau khi huỷ $\rightarrow$ phát `payment.event.refund_requested`).
+  * *Kịch bản DLQ:* Đẩy message hỏng vượt số lần retry (`maxRetries = 3`) $\rightarrow$ message đi qua `trip.dlx` vào hàng đợi chết `trip.dlq`.
 
-### 2.3. 02 Bài Fault & Recovery Tests (Thành viên 3 - Quang phụ trách)
+### 2.4. 02 Bài Security & Input Validation Tests (TV1 phụ trách chính)
 
-* **FR-01: Service sập đột ngột trong luồng nghiệp vụ & Phục hồi từ Queue (Owner: Quang)**
-  * **Thiết lập:** Khách hàng $P_1$ vừa tạo cuốc xe và Matching Service đã tìm thấy tài xế $D_1$.
-  * **Hành động can thiệp:** Lập tức ngắt tiến trình `Payment Service` trước khi sự kiện `payment.event.hold_requested` được xử lý.
-  * **Quan sát trạng thái:**
-    1. Trip Service và Matching Service không bị crash; hệ thống vẫn hoạt động bình thường.
-    2. Tin nhắn yêu cầu giữ tiền nằm an toàn trong hàng đợi của `Broker Service` (lưu trữ bền vững trong `broker.db`).
-  * **Hành động phục hồi:** Khởi động lại `Payment Service`.
-  * **Kiểm chứng:** Payment Service tự động kéo sự kiện từ Broker về xử lý, giữ tiền thành công và đưa chuyến đi về trạng thái `CONFIRMED`. Không có dữ liệu nào bị mất mát.
-* **FR-02: Saga Bù Trừ (Compensating Transaction) khi lỗi thanh toán (Owner: Quang & Thành viên 1 phối hợp)**
-  * **Thiết lập:** Khách hàng $P_1$ có số dư ví = 0 VNĐ.
-  * **Hành động:** $P_1$ đặt cuốc xe có cước 50,000 VNĐ. Matching Service tìm thấy và tạm gán tài xế $D_1$ (`status: BUSY`).
-  * **Kích hoạt bù trừ:** Payment Service phát hiện số dư không đủ $\rightarrow$ bắn event `payment.event.hold_failed`.
-  * **Kiểm chứng:**
-    1. Trip Service nhận event lỗi $\rightarrow$ chuyển trạng thái chuyến đi sang `CANCELLED`.
-    2. Trip Service bắn event bù trừ `trip.event.release_driver`.
-    3. Driver Service nhận event bù trừ $\rightarrow$ trả lại trạng thái cho tài xế $D_1$ từ `BUSY` về `AVAILABLE`.
-    4. Xác nhận trong cơ sở dữ liệu: $D_1$ sẵn sàng đón khách mới, cuốc xe đã bị huỷ sạch sẽ, tính toàn vẹn hệ thống được bảo toàn.
+* **ST-01: Xác thực JWT & Kiểm soát quyền sở hữu (RBAC)**
+  * Gọi `/api/v1/trips*` hoặc `/api/v1/drivers/status` không kèm JWT / JWT hết hạn (`now >= exp`) / JWT đã logout (persistent SHA-256 blacklist) $\rightarrow$ `401 UNAUTHORIZED`.
+  * `DRIVER` tạo cuốc xe, `PASSENGER` gọi `/start` hoặc `/complete`, Passenger B xem/huỷ chuyến của A, Driver Y nhận chuyến của X $\rightarrow$ `403 FORBIDDEN`.
+  * API nội bộ `/internal/*` thiếu hoặc sai `X-Internal-Key` $\rightarrow$ `401 UNAUTHORIZED_INTERNAL`.
+* **ST-02: Validation dữ liệu & Chống Injection / Idempotency**
+  * Toạ độ ngoài phạm vi Trái Đất (`lat: 999`, `""`, `null`), điểm đón trùng điểm đến $\rightarrow$ `400 Bad Request`.
+  * Payload SQL Injection (`"'; DROP TABLE trips; --"`) được xử lý an toàn qua Prepared Statements.
+  * Gửi trùng `Idempotency-Key` cùng payload trả lại kết quả cũ; đổi payload trả `409 IDEMPOTENCY_PAYLOAD_MISMATCH`.
+
+### 2.5. Ghi chú Experiments bổ sung (Mục 7.5 nếu có thời gian)
+* Đánh giá hiệu năng đo Latency/Throughput tại `API Gateway` (`tests/load-performance.experiment.js` của TV3 đã có sẵn, giữ ở mức tham khảo báo cáo, không chặn nghiệm thu 7.1–7.4).
 
 ---
 
-### 2.4. 02 Bài Security & Invalid Data Tests (Thành viên 1 - Trưởng nhóm phụ trách)
+## 3. Bảng Check Nghiệm Thu 9 Kịch Bản Demo Bắt Buộc (Mục 7.4 PDF)
 
-* **ST-01: Kiểm tra Xác thực & Phân quyền truy cập tài nguyên (Owner: Thành viên 1)**
-  * **Thử nghiệm:** Hành khách $P_1$ cố tình gọi API của tài xế (`PUT /api/v1/drivers/location`), hoặc gọi API tạo cuốc mà không kèm JWT token.
-  * **Kết quả:** Gateway hoặc Service chặn ngay lập tức, trả về `401 Unauthorized` hoặc `403 Forbidden`. Không thể thao tác giả mạo danh tính.
-* **ST-02: Kiểm tra Xử lý Dữ liệu sai định dạng (Owner: Thành viên 1)**
-  * **Thử nghiệm:** Gửi payload đặt xe với toạ độ ngoài Trái Đất (`latitude: 999.0`), số tiền âm (`fare: -50000`), hoặc chuỗi SQL Injection (`pickup_address: "'; DROP TABLE trips; --"`).
-  * **Kết quả:** Validator chặn ở tầng DTO, trả về `400 Bad Request` kèm chi tiết lỗi, không có lỗi Runtime unhandled exception hay rò rỉ cấu trúc cơ sở dữ liệu.
-
----
-
-### 2.5. 01 Bài Thí Nghiệm Hiệu Năng & Khả Năng Mở Rộng (Thành viên 3 - Quang phụ trách)
-
-* **Kịch bản:** Giả lập 50 tài xế liên tục gửi toạ độ GPS và 10 khách hàng đặt cuốc đồng thời trong vòng 60 giây.
-* **Chỉ số đo đạc thu thập:**
-  1. Throughput trung bình (Requests per second).
-  2. Latency phân vị: p50, p90, p95, p99.
-  3. Tỷ lệ lỗi (Error rate $\le 0.1\%$).
-  4. Mức tiêu thụ CPU & RAM của từng tiến trình microservice.
+| STT | Yêu cầu Mục 7.4 PDF | Lệnh / Thao tác kiểm chứng | Trạng thái mục tiêu |
+|:---:|---|---|:---:|
+| 1 | Start services independently | `docker compose -f deploy/docker-compose.yml --profile full ps` (mọi service độc lập `healthy`) | Chờ tích hợp & chạy Docker |
+| 2 | Drivers become available | Seed driver + `PUT /api/v1/drivers/location` & `PUT /api/v1/drivers/status` = `AVAILABLE` | Chờ tích hợp |
+| 3 | A passenger requests a ride | Passenger `POST /api/v1/trips` nhận `201 REQUESTED` + `X-Correlation-ID` | Đã xong TV1, chờ E2E |
+| 4 | Matching selects a driver | `Matching` nhận `trip.event.created` $\rightarrow$ lock `Driver` $\rightarrow$ `Payment` hold $\rightarrow$ `CONFIRMED` | Chờ tích hợp TV1+TV2+TV3 |
+| 5 | Driver accepts and completes trip | Driver `POST /accept` $\rightarrow$ `/start` $\rightarrow$ `/complete` $\rightarrow$ `Payment` capture & `Driver` về `AVAILABLE` | Chờ tích hợp |
+| 6 | Two passengers simultaneously request same driver | Script `Promise.all` (CT-01): 1 cuốc `CONFIRMED`, 1 cuốc `CANCELLED` | Chờ tích hợp |
+| 7 | Stop one service during business flow | `docker stop ds03-payment` giữa luồng đặt xe $\rightarrow$ message chờ trong `payment.queue` | Chờ tích hợp |
+| 8 | Demonstrate retry, queue handling, or compensation | Xem retry/DLQ tại `:15672` + chạy khách `0đ` (FR-02) thấy xe tự mở khoá `AVAILABLE` | Chờ tích hợp |
+| 9 | Restart service and continue processing | `docker start ds03-payment` $\rightarrow$ message tự động tiêu thụ hết, cuốc lên `CONFIRMED` | Chờ tích hợp |
