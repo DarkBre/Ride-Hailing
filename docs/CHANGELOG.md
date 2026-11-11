@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+- Hoàn tác PR #1 (`228c908`) của TV3 khỏi nhánh `main` (commit `5c7e6ea`) để giữ `main` làm chuẩn SSOT sạch; chờ 3 thành viên audit, kiểm thử thực tế và mở PR duyệt lại.
 
 ## [0.3.0] - 2026-11-12
 ### Changed (Thống nhất Kiến trúc Bản Final Cách 1 — Mục 7.1–7.4)
