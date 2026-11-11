@@ -39,7 +39,7 @@ function initDatabase(customDbPath = null) {
       status TEXT NOT NULL DEFAULT 'REQUESTED' 
         CHECK (status IN ('REQUESTED', 'MATCHING', 'DRIVER_ASSIGNED', 'CONFIRMED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
       cancellation_reason TEXT,
-      idempotency_key TEXT UNIQUE,
+      idempotency_key TEXT,
       idempotency_payload_hash TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -48,7 +48,9 @@ function initDatabase(customDbPath = null) {
     CREATE INDEX IF NOT EXISTS idx_trips_passenger ON trips(passenger_id);
     CREATE INDEX IF NOT EXISTS idx_trips_driver ON trips(driver_id);
     CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
-    CREATE INDEX IF NOT EXISTS idx_trips_idempotency ON trips(idempotency_key);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trips_passenger_idempotency
+      ON trips(passenger_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
   `);
 
   // 2. Bảng outbox_events (Transactional Outbox Pattern)

@@ -5,11 +5,13 @@ const url = require('node:url');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { initDatabase } = require('./db');
+const { cleanupExpiredBlacklist } = require('./auth');
 const { createRoutes } = require('./routes');
 
 function createIdentityService(options = {}) {
   const port = options.port || config.PORT;
   const db = initDatabase(options.dbPath || null);
+  cleanupExpiredBlacklist(db);
   const routes = createRoutes(db);
 
   const server = http.createServer(async (req, res) => {

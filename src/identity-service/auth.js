@@ -3,7 +3,42 @@
 const crypto = require('node:crypto');
 const config = require('./config');
 
-const tokenBlacklist = new Set();
+const tokenBlacklist = new Set(); // Chỉ lưu token hash (SHA-256)
+
+/**
+ * Băm token bằng SHA-256 trước khi lưu vào blacklist (tránh lưu raw JWT)
+ */
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+/**
+ * So sánh chuỗi bí mật an toàn chống timing attack (băm cố định 32 bytes trước khi timingSafeEqual)
+ */
+function safeCompare(provided, expected) {
+  if (!provided || !expected || typeof provided !== 'string' || typeof expected !== 'string') {
+    return false;
+  }
+  const h1 = crypto.createHash('sha256').update(provided).digest();
+  const h2 = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(h1, h2);
+}
+
+/**
+ * Dọn dẹp các bản ghi blacklist đã hết hạn theo trường expires_at
+ */
+function cleanupExpiredBlacklist(db, nowSeconds = Math.floor(Date.now() / 1000)) {
+  if (!db) return 0;
+  try {
+    const res = db.run(
+      'DELETE FROM token_blacklist WHERE expires_at IS NOT NULL AND expires_at <= ?;',
+      nowSeconds
+    );
+    return res ? res.changes || 0 : 0;
+  } catch (_) {
+    return 0;
+  }
+}
 
 function base64UrlEncode(str) {
   return Buffer.from(str)
@@ -79,18 +114,20 @@ function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
 /**
  * Xác thực JWT token
  */
-function verifyToken(token, db = null) {
+function verifyToken(token, db = null, nowSeconds = Math.floor(Date.now() / 1000)) {
   if (!token || typeof token !== 'string') return null;
 
-  // 1. Kiểm tra blacklist trong bộ nhớ
-  if (tokenBlacklist.has(token)) return null;
+  const tokenHash = hashToken(token);
 
-  // 2. Kiểm tra blacklist bền vững trong SQLite (nếu có DB)
+  // 1. Kiểm tra blacklist trong bộ nhớ (bằng hash)
+  if (tokenBlacklist.has(tokenHash)) return null;
+
+  // 2. Kiểm tra blacklist bền vững trong SQLite (bằng hash, nếu có DB)
   if (db) {
     try {
-      const row = db.get('SELECT token FROM token_blacklist WHERE token = ?;', token);
+      const row = db.get('SELECT token_hash FROM token_blacklist WHERE token_hash = ?;', tokenHash);
       if (row) {
-        tokenBlacklist.add(token);
+        tokenBlacklist.add(tokenHash);
         return null;
       }
     } catch (_) {}
@@ -100,6 +137,16 @@ function verifyToken(token, db = null) {
   if (parts.length !== 3) return null;
 
   const [encodedHeader, encodedPayload, signature] = parts;
+
+  // Kiểm tra header thuật toán HS256 (chặn alg=none hoặc sai thuật toán)
+  try {
+    const header = JSON.parse(base64UrlDecode(encodedHeader));
+    if (!header || header.alg !== 'HS256') {
+      return null;
+    }
+  } catch (_) {
+    return null;
+  }
 
   let expectedSignature;
   try {
@@ -123,9 +170,11 @@ function verifyToken(token, db = null) {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      return null; // Hết hạn
+    if (!payload || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+      return null; // Thiếu claim exp hợp lệ
+    }
+    if (nowSeconds >= payload.exp) {
+      return null; // Hết hạn tại đúng mốc now >= exp (RFC 7519 Section 4.1.4)
     }
     return payload;
   } catch (_) {
@@ -134,11 +183,12 @@ function verifyToken(token, db = null) {
 }
 
 /**
- * Đưa token vào danh sách đen (khi đăng xuất), lưu bền vững vào SQLite
+ * Đưa hash của token vào danh sách đen (khi đăng xuất), lưu bền vững vào SQLite và dọn bản ghi hết hạn
  */
 function revokeToken(token, db = null) {
   if (token && typeof token === 'string') {
-    tokenBlacklist.add(token);
+    const tokenHash = hashToken(token);
+    tokenBlacklist.add(tokenHash);
     if (db) {
       try {
         let exp = null;
@@ -146,13 +196,14 @@ function revokeToken(token, db = null) {
           const parts = token.split('.');
           if (parts.length === 3) {
             const p = JSON.parse(base64UrlDecode(parts[1]));
-            exp = p.exp || null;
+            exp = typeof p.exp === 'number' ? p.exp : null;
           }
         } catch (_) {}
 
+        cleanupExpiredBlacklist(db);
         db.run(
-          'INSERT OR IGNORE INTO token_blacklist (token, expires_at) VALUES (?, ?);',
-          token,
+          'INSERT OR IGNORE INTO token_blacklist (token_hash, expires_at) VALUES (?, ?);',
+          tokenHash,
           exp
         );
       } catch (_) {}
@@ -165,6 +216,9 @@ function revokeToken(token, db = null) {
 module.exports = {
   hashPassword,
   verifyPassword,
+  hashToken,
+  safeCompare,
+  cleanupExpiredBlacklist,
   signToken,
   verifyToken,
   revokeToken,

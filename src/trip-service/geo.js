@@ -5,10 +5,10 @@
  */
 function haversineDistanceKm(coord1, coord2) {
   if (!coord1 || !coord2) return 0;
-  const lat1 = Number(coord1.lat || coord1.latitude);
-  const lon1 = Number(coord1.lng || coord1.lon || coord1.longitude);
-  const lat2 = Number(coord2.lat || coord2.latitude);
-  const lon2 = Number(coord2.lng || coord2.lon || coord2.longitude);
+  const lat1 = Number(coord1.lat ?? coord1.latitude);
+  const lon1 = Number(coord1.lng ?? coord1.lon ?? coord1.longitude);
+  const lat2 = Number(coord2.lat ?? coord2.latitude);
+  const lon2 = Number(coord2.lng ?? coord2.lon ?? coord2.longitude);
 
   if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return 0;
 

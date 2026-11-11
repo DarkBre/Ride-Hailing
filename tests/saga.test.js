@@ -12,11 +12,14 @@ const fs = require('node:fs');
 const http = require('node:http');
 const { createTripService } = require('../src/trip-service');
 const { SAGA_STATUS } = require('../src/trip-service/saga-coordinator');
+const { signToken } = require('../src/identity-service/auth');
 
 const TEST_PORT = 8904;
 const TEST_DB = path.join(__dirname, '..', 'data', 'test_saga_db.sqlite');
 const INTERNAL_KEY = 'dev-internal-service-key-ds03';
 const INTERNAL_HEADERS = { 'x-internal-key': INTERNAL_KEY };
+const PASSENGER_TOKEN = signToken({ userId: 'passenger_saga_01', role: 'PASSENGER', email: 'saga_p1@test.com' });
+const AUTH_HEADERS = { Authorization: `Bearer ${PASSENGER_TOKEN}` };
 
 function cleanTestDb() {
   for (const ext of ['', '-wal', '-shm']) {
@@ -100,6 +103,7 @@ async function runTests() {
       const res = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: AUTH_HEADERS,
         body: {
           pickup_latitude: 21.0285,
           pickup_longitude: 105.8544,
@@ -143,12 +147,15 @@ async function runTests() {
       const saga = service.sagaCoordinator.getSagaStatus(happyTripId);
       assert.strictEqual(saga.status, SAGA_STATUS.HOLDING_PAYMENT);
 
-      // Kiểm tra Outbox event payment.event.hold_requested đã được sinh ra
+      // Kiểm tra Outbox event payment.event.hold_requested đã được sinh ra kèm passenger_id
       const holdEvt = service.db.get(
         "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.hold_requested';",
         happyTripId
       );
       assert(holdEvt, 'Outbox phải chứa payment.event.hold_requested');
+      const holdPayload = JSON.parse(holdEvt.payload);
+      assert.strictEqual(holdPayload.passenger_id, 'passenger_saga_01', 'hold_requested phải chứa passenger_id cho Payment Service');
+      assert.strictEqual(holdPayload.driver_id, 'driver_vip_01');
     });
 
     await test('Saga 1.3: Nhận event payment.event.hold_success -> Trip chuyển CONFIRMED, Saga chuyển CONFIRMED (Happy path hoàn tất)', async () => {
@@ -182,6 +189,7 @@ async function runTests() {
       const res = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: AUTH_HEADERS,
         body: {
           pickup_latitude: 21.01,
           pickup_longitude: 105.80,
@@ -257,6 +265,7 @@ async function runTests() {
       const resCreate = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: AUTH_HEADERS,
         body: {
           pickup_latitude: 21.02,
           pickup_longitude: 105.85,
@@ -353,6 +362,7 @@ async function runTests() {
       const resCreate = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: AUTH_HEADERS,
         body: {
           pickup_latitude: 21.02,
           pickup_longitude: 105.85,
@@ -364,10 +374,11 @@ async function runTests() {
       });
       const staleTripId = resCreate.body.data.id;
 
-      // Khách huỷ chuyến khi đang ở trạng thái PENDING
+      // Khách huỷ chuyến khi đang ở trạng thái REQUESTED
       const resCancel = await makeRequest({
         method: 'POST',
         path: `/trips/${staleTripId}/cancel`,
+        headers: AUTH_HEADERS,
         body: { reason: 'Khách đổi ý muốn đi bộ' },
       });
       assert.strictEqual(resCancel.status, 200);
@@ -471,6 +482,7 @@ async function runTests() {
       const resCreate = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: AUTH_HEADERS,
         body: {
           pickup_latitude: 21.03,
           pickup_longitude: 105.84,
@@ -486,6 +498,7 @@ async function runTests() {
       await makeRequest({
         method: 'POST',
         path: `/trips/${raceTripId}/cancel`,
+        headers: AUTH_HEADERS,
         body: { reason: 'Khách không muốn đi nữa' },
       });
 
@@ -590,12 +603,115 @@ async function runTests() {
       assert.strictEqual(saga.status, SAGA_STATUS.COMPENSATED);
     });
 
+    // -------------------------------------------------------------
+    // KỊCH BẢN 10: TÍNH NGUYÊN TỬ KHI LỖI GIỮA TRANSACTION (P2 ATOMICITY)
+    // -------------------------------------------------------------
+    await test('Saga 10: Lỗi xảy ra giữa chừng khi xử lý event -> Rollback toàn bộ Trip, Saga, Outbox & processed_events', async () => {
+      const resCreate = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: AUTH_HEADERS,
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'Atomic Start',
+          dropoff_latitude: 21.04,
+          dropoff_longitude: 105.82,
+          dropoff_address: 'Atomic End',
+        },
+      });
+      const atomicTripId = resCreate.body.data.id;
+
+      await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_atomic_match',
+          event_type: 'trip.event.driver_matched',
+          payload: { trip_id: atomicTripId, driver_id: 'driver_atomic_1', estimated_fare: 35000 },
+        },
+      });
+
+      // Mô phỏng sự cố xảy ra ngay tại bước ghi processed_events sau khi đã UPDATE trips/saga và INSERT outbox
+      const originalMark = service.sagaCoordinator.markEventProcessed.bind(service.sagaCoordinator);
+      service.sagaCoordinator.markEventProcessed = () => {
+        throw new Error('SIMULATED_CRASH_BEFORE_COMMIT');
+      };
+
+      let caughtErr = null;
+      try {
+        service.sagaCoordinator.handlePaymentHoldFailed({
+          eventId: 'evt_crash_atomic',
+          tripId: atomicTripId,
+          driverId: 'driver_atomic_1',
+          reason: 'INSUFFICIENT_FUNDS',
+        });
+      } catch (e) {
+        caughtErr = e;
+      } finally {
+        service.sagaCoordinator.markEventProcessed = originalMark;
+      }
+
+      assert(caughtErr && caughtErr.message.includes('SIMULATED_CRASH_BEFORE_COMMIT'));
+
+      // Xác minh ROLLBACK hoàn toàn: Không có trạng thái dở dang
+      const tripAfterCrash = service.db.get('SELECT * FROM trips WHERE id = ?;', atomicTripId);
+      assert.strictEqual(tripAfterCrash.status, 'DRIVER_ASSIGNED', 'Trip phải rollback về DRIVER_ASSIGNED');
+
+      const sagaAfterCrash = service.sagaCoordinator.getSagaStatus(atomicTripId);
+      assert.strictEqual(sagaAfterCrash.status, SAGA_STATUS.HOLDING_PAYMENT, 'Saga phải rollback về HOLDING_PAYMENT');
+
+      const outboxRelease = service.db.get(
+        "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'trip.event.release_driver';",
+        atomicTripId
+      );
+      assert.strictEqual(outboxRelease, undefined, 'Outbox không được chứa event bù trừ sau rollback');
+      assert.strictEqual(service.sagaCoordinator.isEventProcessed('evt_crash_atomic'), false, 'processed_events không được ghi nhận sau rollback');
+
+      // Khi retry lại event evt_crash_atomic bình thường -> thực thi thành công trọn vẹn
+      const resRetry = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_crash_atomic',
+          event_type: 'payment.event.hold_failed',
+          payload: { trip_id: atomicTripId, driver_id: 'driver_atomic_1', reason: 'INSUFFICIENT_FUNDS' },
+        },
+      });
+      assert.strictEqual(resRetry.status, 200);
+      assert.strictEqual(resRetry.body.data.action, 'COMPENSATED');
+    });
+
+    // -------------------------------------------------------------
+    // KỊCH BẢN 11: STALE MATCHING_FAILED SAU KHI ĐÃ CONFIRMED
+    // -------------------------------------------------------------
+    await test('Saga 11: Stale trip.event.matching_failed đến sau khi chuyến đã CONFIRMED -> Bỏ qua an toàn, không huỷ chuyến', async () => {
+      const resStaleFail = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_stale_matching_failed_011',
+          event_type: 'trip.event.matching_failed',
+          payload: { trip_id: happyTripId, reason: 'Late timeout message' },
+        },
+      });
+      assert.strictEqual(resStaleFail.status, 200);
+      assert.strictEqual(resStaleFail.body.data.action, 'STALE_MATCHING_FAILED_IGNORED');
+
+      const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', happyTripId);
+      assert.strictEqual(trip.status, 'CONFIRMED', 'Chuyến đã CONFIRMED không thể bị matching_failed đến muộn huỷ bỏ');
+    });
+
   } finally {
     await service.stop();
     cleanTestDb();
   }
 
   console.log(`\n🎉 KẾT QUẢ: ${passed}/${total} TESTS PASSED CHO SAGA TRANSACTION COORDINATOR!`);
+  return { passed, total };
 }
 
 if (require.main === module) {

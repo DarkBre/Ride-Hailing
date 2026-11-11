@@ -2,8 +2,54 @@
 
 const crypto = require('node:crypto');
 const { PricingEngine } = require('./pricing-engine');
-const { extractCaller } = require('./auth');
+const { extractCaller, safeCompare } = require('./auth');
+const { SAGA_STATUS } = require('./saga-coordinator');
 const config = require('./config');
+
+function createError(status, code, message) {
+  const err = new Error(message);
+  err.status = status;
+  err.code = code;
+  return err;
+}
+
+/**
+ * Bắt buộc xác thực người gọi (JWT Bearer token hợp lệ hoặc X-Internal-Key nội bộ)
+ */
+function requireCaller(headers) {
+  const caller = extractCaller(headers);
+  if (!caller || caller.isInvalidToken || caller.isInvalidInternalKey) {
+    throw createError(401, 'UNAUTHORIZED', 'Yêu cầu JWT token hoặc khoá nội bộ hợp lệ');
+  }
+  return caller;
+}
+
+/**
+ * Parse toạ độ chặt chẽ, từ chối null, chuỗi rỗng, boolean hoặc ngoài khoảng
+ */
+function parseCoordinate(value, min, max) {
+  if (value === null || value === undefined || value === '' || typeof value === 'boolean') {
+    return NaN;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < min || num > max) {
+    return NaN;
+  }
+  return num;
+}
+
+/**
+ * Kiểm tra quyền thao tác tài xế được gán (ACCEPT / START / COMPLETE)
+ */
+function assertDriverOwnership(caller, trip, actionDesc) {
+  if (caller.isInternal) return;
+  if (caller.role !== 'DRIVER') {
+    throw createError(403, 'FORBIDDEN', `Chỉ tài xế (DRIVER) mới có quyền ${actionDesc}`);
+  }
+  if (!trip.driver_id || caller.userId !== trip.driver_id) {
+    throw createError(403, 'FORBIDDEN', `Bạn không phải tài xế được gán cho cuốc xe này để ${actionDesc}`);
+  }
+}
 
 function createRoutes(db, sagaCoordinator, outboxManager) {
   const pricingEngine = new PricingEngine();
@@ -36,68 +82,44 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
           passenger_id,
         } = body || {};
 
-        // 2.1. Xác thực & Phân quyền chủ sở hữu (ST-01, Section 6.1)
-        const caller = extractCaller(headers);
-        if (caller && caller.isInvalidToken) {
-          const err = new Error('Token xác thực không hợp lệ hoặc đã hết hạn');
-          err.status = 401;
-          err.code = 'UNAUTHORIZED';
-          throw err;
+        // 2.1. Xác thực & Phân quyền chủ sở hữu (ST-01)
+        const caller = requireCaller(headers);
+        if (!caller.isInternal && caller.role !== 'PASSENGER') {
+          throw createError(403, 'FORBIDDEN', 'Chỉ hành khách (PASSENGER) mới có quyền tạo cuốc xe');
         }
 
-        if (caller && !caller.isInternal) {
-          if (caller.role !== 'PASSENGER') {
-            const err = new Error('Chỉ hành khách (PASSENGER) mới có quyền tạo cuốc xe');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
-          }
+        // Tuyệt đối không tin passenger_id client gửi khi gọi bằng JWT người dùng
+        const effectivePassengerId = caller.isInternal
+          ? passenger_id
+          : caller.userId;
+
+        if (!effectivePassengerId || typeof effectivePassengerId !== 'string') {
+          throw createError(400, 'MISSING_PASSENGER_ID', 'Thiếu định danh hành khách');
         }
 
-        // Không tin passenger_id tuỳ ý từ body nếu có token xác thực
-        const effectivePassengerId = caller && !caller.isInternal
-          ? caller.userId
-          : (passenger_id || `passenger_${crypto.randomBytes(4).toString('hex')}`);
+        // 2.2. Validate input data (ST-02)
+        const pLat = parseCoordinate(pickup_latitude, -90, 90);
+        const pLon = parseCoordinate(pickup_longitude, -180, 180);
+        const dLat = parseCoordinate(dropoff_latitude, -90, 90);
+        const dLon = parseCoordinate(dropoff_longitude, -180, 180);
 
-        // 2.2. Validate input data (ST-02, Section 8.1)
-        const pLat = Number(pickup_latitude);
-        const pLon = Number(pickup_longitude);
-        const dLat = Number(dropoff_latitude);
-        const dLon = Number(dropoff_longitude);
-
-        if (
-          isNaN(pLat) || isNaN(pLon) || isNaN(dLat) || isNaN(dLon) ||
-          pLat < -90 || pLat > 90 || dLat < -90 || dLat > 90 ||
-          pLon < -180 || pLon > 180 || dLon < -180 || dLon > 180
-        ) {
-          const err = new Error('Toạ độ GPS không hợp lệ (Latitude [-90, 90], Longitude [-180, 180])');
-          err.status = 400;
-          err.code = 'INVALID_COORDINATES';
-          throw err;
+        if (isNaN(pLat) || isNaN(pLon) || isNaN(dLat) || isNaN(dLon)) {
+          throw createError(400, 'INVALID_COORDINATES', 'Toạ độ GPS không hợp lệ (Latitude [-90, 90], Longitude [-180, 180])');
         }
 
         if (pLat === dLat && pLon === dLon) {
-          const err = new Error('Điểm đón và điểm đến không được trùng nhau');
-          err.status = 400;
-          err.code = 'ZERO_DISTANCE';
-          throw err;
+          throw createError(400, 'ZERO_DISTANCE', 'Điểm đón và điểm đến không được trùng nhau');
         }
 
         if (!pickup_address || typeof pickup_address !== 'string' || pickup_address.trim().length === 0) {
-          const err = new Error('Địa chỉ điểm đón không được để trống');
-          err.status = 400;
-          err.code = 'INVALID_PICKUP_ADDRESS';
-          throw err;
+          throw createError(400, 'INVALID_PICKUP_ADDRESS', 'Địa chỉ điểm đón không được để trống');
         }
 
         if (!dropoff_address || typeof dropoff_address !== 'string' || dropoff_address.trim().length === 0) {
-          const err = new Error('Địa chỉ điểm đến không được để trống');
-          err.status = 400;
-          err.code = 'INVALID_DROPOFF_ADDRESS';
-          throw err;
+          throw createError(400, 'INVALID_DROPOFF_ADDRESS', 'Địa chỉ điểm đến không được để trống');
         }
 
-        // 2.3. Kiểm tra Idempotency Key kèm so sánh Payload Hash (Section 6.3)
+        // 2.3. Kiểm tra Idempotency Key theo phạm vi từng hành khách (passenger_id + idempotency_key)
         const currentPayloadHash = crypto
           .createHash('sha256')
           .update(
@@ -112,16 +134,16 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
           )
           .digest('hex');
 
-        const idempotencyKey = headers['idempotency-key'] || null;
+        const idempotencyKey = headers['idempotency-key'] ? String(headers['idempotency-key']) : null;
         if (idempotencyKey) {
-          const existing = db.get('SELECT * FROM trips WHERE idempotency_key = ?;', idempotencyKey);
+          const existing = db.get(
+            'SELECT * FROM trips WHERE passenger_id = ? AND idempotency_key = ?;',
+            effectivePassengerId,
+            idempotencyKey
+          );
           if (existing) {
-            // Cùng key nhưng payload khác nhau -> Trả về 409 Conflict
             if (existing.idempotency_payload_hash && existing.idempotency_payload_hash !== currentPayloadHash) {
-              const err = new Error('Idempotency-Key đã được sử dụng cho một yêu cầu đặt xe khác');
-              err.status = 409;
-              err.code = 'IDEMPOTENCY_PAYLOAD_MISMATCH';
-              throw err;
+              throw createError(409, 'IDEMPOTENCY_PAYLOAD_MISMATCH', 'Idempotency-Key đã được sử dụng cho một yêu cầu đặt xe khác');
             }
 
             return {
@@ -136,14 +158,16 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
         }
 
         // 2.4. Tính toán giá cước động (Dynamic Pricing Engine - Mục 4.4 ARCHITECTURE.md)
-        // Thống kê số lượng chuyến PENDING/MATCHING trong 5 phút vừa qua làm chỉ số Demand thực tế
+        // Dùng mốc ISO-8601 UTC chính xác trong 5 phút gần nhất để khớp định dạng cột created_at
+        const fiveMinutesAgoIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const demandRow = db.get(
           `SELECT COUNT(*) as count FROM trips 
            WHERE status IN ('REQUESTED', 'MATCHING') 
-           AND created_at >= datetime('now', '-5 minutes');`
+           AND created_at >= ?;`,
+          fiveMinutesAgoIso
         );
         const demand = demandRow ? demandRow.count : 0;
-        const supply = 3; // Mặc định vùng hoạt động nếu Driver Service chưa kết nối trực tiếp
+        const supply = 3; // Giá trị mặc định khi Driver Service (TV2) chưa kết nối trực tiếp
 
         const fareResult = pricingEngine.calculateFare({
           pickup: { lat: pLat, lon: pLon },
@@ -159,10 +183,10 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
         db.tx(() => {
           db.run(
             `INSERT INTO trips (
-              id, passenger_id, pickup_latitude, pickup_longitude, pickup_address,
+              id, passenger_id, driver_id, pickup_latitude, pickup_longitude, pickup_address,
               dropoff_latitude, dropoff_longitude, dropoff_address, distance_km,
               fare, surge_multiplier, status, idempotency_key, idempotency_payload_hash, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, ?, ?);`,
+            ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, ?, ?);`,
             tripId,
             effectivePassengerId,
             pLat,
@@ -180,7 +204,6 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
             now
           );
 
-          // Khởi động Saga Coordinator & ghi Outbox trip.event.created
           sagaCoordinator.startSaga({
             tripId,
             passengerId: effectivePassengerId,
@@ -207,34 +230,24 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       path,
       status: 200,
       handler: async ({ params, headers }) => {
+        const caller = requireCaller(headers);
+
         const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
         if (!trip) {
-          const err = new Error(`Không tìm thấy cuốc xe với ID: ${params.id}`);
-          err.status = 404;
-          err.code = 'TRIP_NOT_FOUND';
-          throw err;
+          throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
         }
 
-        // Kiểm tra quyền truy cập (ST-01)
-        const caller = extractCaller(headers);
-        if (caller && caller.isInvalidToken) {
-          const err = new Error('Token xác thực không hợp lệ');
-          err.status = 401;
-          err.code = 'UNAUTHORIZED';
-          throw err;
-        }
-        if (caller && !caller.isInternal) {
-          if (caller.role === 'PASSENGER' && caller.userId !== trip.passenger_id) {
-            const err = new Error('Bạn không có quyền xem thông tin chuyến xe của người khác');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
-          }
-          if (caller.role === 'DRIVER' && trip.driver_id && caller.userId !== trip.driver_id) {
-            const err = new Error('Bạn không có quyền xem chuyến xe không được gán cho bạn');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
+        if (!caller.isInternal) {
+          if (caller.role === 'PASSENGER') {
+            if (caller.userId !== trip.passenger_id) {
+              throw createError(403, 'FORBIDDEN', 'Bạn không có quyền xem thông tin chuyến xe của người khác');
+            }
+          } else if (caller.role === 'DRIVER') {
+            if (!trip.driver_id || caller.userId !== trip.driver_id) {
+              throw createError(403, 'FORBIDDEN', 'Bạn không có quyền xem chuyến xe không được gán cho bạn');
+            }
+          } else {
+            throw createError(403, 'FORBIDDEN', 'Vai trò không hợp lệ để truy cập thông tin chuyến xe');
           }
         }
 
@@ -253,47 +266,25 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       path,
       status: 200,
       handler: async ({ params, headers }) => {
-        const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
-        if (!trip) {
-          const err = new Error(`Không tìm thấy cuốc xe với ID: ${params.id}`);
-          err.status = 404;
-          err.code = 'TRIP_NOT_FOUND';
-          throw err;
-        }
+        const caller = requireCaller(headers);
 
-        const caller = extractCaller(headers);
-        if (caller && caller.isInvalidToken) {
-          const err = new Error('Token xác thực không hợp lệ');
-          err.status = 401;
-          err.code = 'UNAUTHORIZED';
-          throw err;
-        }
-        if (caller && !caller.isInternal) {
-          if (caller.role === 'PASSENGER') {
-            const err = new Error('Hành khách không thể nhận cuốc xe');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
+        return db.tx(() => {
+          const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
+          if (!trip) {
+            throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
           }
-          if (caller.role === 'DRIVER' && trip.driver_id && caller.userId !== trip.driver_id) {
-            const err = new Error('Bạn không phải tài xế được gán cho cuốc xe này');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
+
+          assertDriverOwnership(caller, trip, 'nhận cuốc xe');
+
+          if (!['DRIVER_ASSIGNED', 'CONFIRMED'].includes(trip.status)) {
+            throw createError(400, 'INVALID_STATE_TRANSITION', `Không thể nhận chuyến ở trạng thái hiện tại: ${trip.status}`);
           }
-        }
 
-        if (!['DRIVER_ASSIGNED', 'CONFIRMED'].includes(trip.status)) {
-          const err = new Error(`Không thể nhận chuyến ở trạng thái hiện tại: ${trip.status}`);
-          err.status = 400;
-          err.code = 'INVALID_STATE_TRANSITION';
-          throw err;
-        }
+          const now = new Date().toISOString();
+          db.run("UPDATE trips SET status = 'ACCEPTED', updated_at = ? WHERE id = ?;", now, params.id);
 
-        const now = new Date().toISOString();
-        db.run("UPDATE trips SET status = 'ACCEPTED', updated_at = ? WHERE id = ?;", now, params.id);
-
-        return { id: params.id, status: 'ACCEPTED' };
+          return { id: params.id, status: 'ACCEPTED' };
+        });
       },
     })),
 
@@ -303,33 +294,25 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       path,
       status: 200,
       handler: async ({ params, headers }) => {
-        const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
-        if (!trip) {
-          const err = new Error(`Không tìm thấy cuốc xe với ID: ${params.id}`);
-          err.status = 404;
-          err.code = 'TRIP_NOT_FOUND';
-          throw err;
-        }
+        const caller = requireCaller(headers);
 
-        const caller = extractCaller(headers);
-        if (caller && !caller.isInternal && caller.role === 'DRIVER' && trip.driver_id && caller.userId !== trip.driver_id) {
-          const err = new Error('Chỉ tài xế được gán mới có quyền bắt đầu chuyến xe');
-          err.status = 403;
-          err.code = 'FORBIDDEN';
-          throw err;
-        }
+        return db.tx(() => {
+          const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
+          if (!trip) {
+            throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
+          }
 
-        if (trip.status !== 'ACCEPTED') {
-          const err = new Error(`Chỉ có thể bắt đầu khi chuyến đã ACCEPTED (Hiện tại: ${trip.status})`);
-          err.status = 400;
-          err.code = 'INVALID_STATE_TRANSITION';
-          throw err;
-        }
+          assertDriverOwnership(caller, trip, 'bắt đầu chuyến xe');
 
-        const now = new Date().toISOString();
-        db.run("UPDATE trips SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?;", now, params.id);
+          if (trip.status !== 'ACCEPTED') {
+            throw createError(400, 'INVALID_STATE_TRANSITION', `Chỉ có thể bắt đầu khi chuyến đã ACCEPTED (Hiện tại: ${trip.status})`);
+          }
 
-        return { id: params.id, status: 'IN_PROGRESS' };
+          const now = new Date().toISOString();
+          db.run("UPDATE trips SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?;", now, params.id);
+
+          return { id: params.id, status: 'IN_PROGRESS' };
+        });
       },
     })),
 
@@ -339,39 +322,21 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       path,
       status: 200,
       handler: async ({ params, headers, correlationId }) => {
-        const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
-        if (!trip) {
-          const err = new Error(`Không tìm thấy cuốc xe với ID: ${params.id}`);
-          err.status = 404;
-          err.code = 'TRIP_NOT_FOUND';
-          throw err;
-        }
+        const caller = requireCaller(headers);
 
-        const caller = extractCaller(headers);
-        if (caller && !caller.isInternal) {
-          if (caller.role === 'PASSENGER') {
-            const err = new Error('Hành khách không thể hoàn tất cuốc xe');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
+        return db.tx(() => {
+          const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
+          if (!trip) {
+            throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
           }
-          if (caller.role === 'DRIVER' && trip.driver_id && caller.userId !== trip.driver_id) {
-            const err = new Error('Chỉ tài xế được gán mới có quyền hoàn tất chuyến xe');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
+
+          assertDriverOwnership(caller, trip, 'hoàn tất chuyến xe');
+
+          if (!['IN_PROGRESS', 'ACCEPTED'].includes(trip.status)) {
+            throw createError(400, 'INVALID_STATE_TRANSITION', `Không thể hoàn tất chuyến ở trạng thái: ${trip.status}`);
           }
-        }
 
-        if (!['IN_PROGRESS', 'ACCEPTED'].includes(trip.status)) {
-          const err = new Error(`Không thể hoàn tất chuyến ở trạng thái: ${trip.status}`);
-          err.status = 400;
-          err.code = 'INVALID_STATE_TRANSITION';
-          throw err;
-        }
-
-        const now = new Date().toISOString();
-        db.tx(() => {
+          const now = new Date().toISOString();
           db.run("UPDATE trips SET status = 'COMPLETED', updated_at = ? WHERE id = ?;", now, params.id);
 
           // Bắn sự kiện trip.event.completed để Payment Service trừ tiền thật
@@ -387,9 +352,9 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
             },
             correlationId,
           });
-        });
 
-        return { id: params.id, status: 'COMPLETED' };
+          return { id: params.id, status: 'COMPLETED' };
+        });
       },
     })),
 
@@ -399,43 +364,48 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       path,
       status: 200,
       handler: async ({ params, body, headers, correlationId }) => {
+        const caller = requireCaller(headers);
         const { reason } = body || {};
-        const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
-        if (!trip) {
-          const err = new Error(`Không tìm thấy cuốc xe với ID: ${params.id}`);
-          err.status = 404;
-          err.code = 'TRIP_NOT_FOUND';
-          throw err;
-        }
 
-        const caller = extractCaller(headers);
-        if (caller && !caller.isInternal) {
-          if (caller.role === 'PASSENGER' && caller.userId !== trip.passenger_id) {
-            const err = new Error('Bạn không thể huỷ chuyến xe của người khác');
-            err.status = 403;
-            err.code = 'FORBIDDEN';
-            throw err;
+        return db.tx(() => {
+          const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
+          if (!trip) {
+            throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
           }
-        }
 
-        if (['COMPLETED', 'CANCELLED'].includes(trip.status)) {
-          const err = new Error(`Không thể huỷ chuyến xe đã kết thúc hoặc đã huỷ (Trạng thái: ${trip.status})`);
-          err.status = 400;
-          err.code = 'CANNOT_CANCEL';
-          throw err;
-        }
+          if (!caller.isInternal) {
+            if (caller.role === 'PASSENGER') {
+              if (caller.userId !== trip.passenger_id) {
+                throw createError(403, 'FORBIDDEN', 'Bạn không thể huỷ chuyến xe của người khác');
+              }
+            } else if (caller.role === 'DRIVER') {
+              if (!trip.driver_id || caller.userId !== trip.driver_id) {
+                throw createError(403, 'FORBIDDEN', 'Bạn không phải tài xế của chuyến xe này để huỷ');
+              }
+            } else {
+              throw createError(403, 'FORBIDDEN', 'Vai trò không hợp lệ để huỷ chuyến xe');
+            }
+          }
 
-        const now = new Date().toISOString();
-        db.tx(() => {
+          if (['COMPLETED', 'CANCELLED'].includes(trip.status)) {
+            throw createError(400, 'CANNOT_CANCEL', `Không thể huỷ chuyến xe đã kết thúc hoặc đã huỷ (Trạng thái: ${trip.status})`);
+          }
+
+          const now = new Date().toISOString();
+          const cancelReason = reason || (caller.role === 'DRIVER' ? 'DRIVER_CANCELLED' : 'PASSENGER_CANCELLED');
+
           db.run(
             "UPDATE trips SET status = 'CANCELLED', cancellation_reason = ?, updated_at = ? WHERE id = ?;",
-            reason || 'Hành khách huỷ chuyến',
+            cancelReason,
             now,
             params.id
           );
 
+          let hasCompensation = false;
+
           // Nếu đã gán tài xế, phát lệnh bù trừ giải phóng tài xế
           if (trip.driver_id) {
+            hasCompensation = true;
             outboxManager.insertEvent({
               aggregateType: 'TRIP',
               aggregateId: params.id,
@@ -443,7 +413,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
               payload: {
                 trip_id: params.id,
                 driver_id: trip.driver_id,
-                reason: reason || 'PASSENGER_CANCELLED',
+                reason: cancelReason,
               },
               correlationId,
             });
@@ -451,6 +421,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
 
           // Nếu chuyến đi đã được CONFIRMED trở đi (tiền đã bị tạm giữ), phát lệnh bù trừ giải phóng tiền
           if (['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'].includes(trip.status)) {
+            hasCompensation = true;
             outboxManager.insertEvent({
               aggregateType: 'TRIP',
               aggregateId: params.id,
@@ -459,39 +430,45 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
                 trip_id: params.id,
                 passenger_id: trip.passenger_id,
                 amount: trip.fare,
-                reason: reason || 'PASSENGER_CANCELLED',
+                reason: cancelReason,
               },
               correlationId,
             });
           }
-        });
 
-        return { id: params.id, status: 'CANCELLED', reason: reason || 'Hành khách huỷ chuyến' };
+          // Đồng bộ trạng thái Saga Instance nguyên tử trong cùng transaction
+          db.run(
+            `UPDATE saga_instances 
+             SET status = ?, current_step = ?, error_reason = ?, updated_at = ? 
+             WHERE trip_id = ?;`,
+            hasCompensation ? SAGA_STATUS.COMPENSATED : SAGA_STATUS.FAILED,
+            hasCompensation ? 'TRIP_CANCELLED_COMPENSATED' : 'TRIP_CANCELLED_BEFORE_MATCH',
+            cancelReason,
+            now,
+            params.id
+          );
+
+          return { id: params.id, status: 'CANCELLED', reason: cancelReason };
+        });
       },
     })),
 
     // 8. Cổng nhận sự kiện bất đồng bộ / Webhook xử lý Saga từ Broker
-    // Bảo vệ bằng x-internal-key
+    // Bảo vệ nghiêm ngặt bằng timing-safe x-internal-key và bắt buộc có event_id
     {
       method: 'POST',
       path: '/internal/events',
       status: 200,
       handler: async ({ headers, body }) => {
         const internalKey = headers['x-internal-key'];
-        if (!internalKey || internalKey !== config.INTERNAL_KEY) {
-          const err = new Error('Yêu cầu x-internal-key hợp lệ để gửi sự kiện nội bộ');
-          err.status = 401;
-          err.code = 'UNAUTHORIZED_INTERNAL';
-          throw err;
+        if (!safeCompare(internalKey, config.INTERNAL_KEY)) {
+          throw createError(401, 'UNAUTHORIZED_INTERNAL', 'Yêu cầu x-internal-key hợp lệ để gửi sự kiện nội bộ');
         }
 
         const { event_id, event_type, payload, correlation_id } = body || {};
 
-        if (!event_type || !payload) {
-          const err = new Error('Event envelope thiếu event_type hoặc payload');
-          err.status = 400;
-          err.code = 'INVALID_EVENT';
-          throw err;
+        if (!event_id || typeof event_id !== 'string' || !event_type || !payload || typeof payload !== 'object') {
+          throw createError(400, 'INVALID_EVENT', 'Event envelope bắt buộc phải có event_id, event_type và payload');
         }
 
         let result = null;
