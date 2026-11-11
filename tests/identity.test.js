@@ -9,6 +9,8 @@ const assert = require('node:assert');
 const http = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const { createIdentityService } = require('../src/identity-service');
 const auth = require('../src/identity-service/auth');
 
@@ -375,6 +377,73 @@ async function runTests() {
         headers: { Authorization: `Bearer ${freshToken}` },
       });
       assert.strictEqual(meFresh.status, 200);
+
+      // 8. Kiểm tra SQLite chỉ lưu token_hash (SHA-256), tuyệt đối không lưu raw JWT token
+      const blRows = service.db.all('SELECT token_hash, expires_at FROM token_blacklist;');
+      assert(blRows.length >= 1, 'Phải có bản ghi trong token_blacklist');
+      for (const r of blRows) {
+        assert.notStrictEqual(r.token_hash, persistentToken, 'Không được lưu raw JWT trong blacklist');
+        assert(/^[a-f0-9]{64}$/.test(r.token_hash), 'token_blacklist phải lưu SHA-256 hex digest (64 ký tự)');
+      }
+      const expectedHash = auth.hashToken(persistentToken);
+      assert(blRows.some((r) => r.token_hash === expectedHash), 'Phải tìm thấy đúng SHA-256 hash của token đã logout');
+    });
+
+    // 16. Security Boundary: Kiểm tra JWT tại đúng mốc now >= exp và alg != HS256
+    await test('Security Boundary: JWT bị từ chối tại đúng thời điểm now === exp và khi sai alg header', () => {
+      const tokenZeroExp = auth.signToken({ userId: passengerId, role: 'PASSENGER' }, 0);
+      const decodedPayload = JSON.parse(Buffer.from(tokenZeroExp.split('.')[1], 'base64url').toString('utf8'));
+      const exactExp = decodedPayload.exp;
+
+      // Trước thời điểm hết hạn 1s -> hợp lệ
+      assert(auth.verifyToken(tokenZeroExp, null, exactExp - 1) !== null, 'Trước exp 1s token vẫn phải hợp lệ');
+      // Tại đúng thời điểm now === exp -> phải hết hạn (null)
+      assert.strictEqual(auth.verifyToken(tokenZeroExp, null, exactExp), null, 'Tại now === exp token phải bị từ chối');
+
+      // Thử token giả mạo alg=none dù chữ ký khớp secret dev
+      const badHeader = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+      const payloadB64 = Buffer.from(JSON.stringify({ userId: passengerId, role: 'PASSENGER', exp: exactExp + 3600 })).toString('base64url');
+      const sig = crypto.createHmac('sha256', require('../src/identity-service/config').JWT_SECRET)
+        .update(`${badHeader}.${payloadB64}`).digest('base64url');
+      assert.strictEqual(auth.verifyToken(`${badHeader}.${payloadB64}.${sig}`), null, 'Phải từ chối header alg != HS256');
+    });
+
+    // 17. Security Cleanup: Dọn dẹp các bản ghi blacklist đã hết hạn
+    await test('Blacklist Cleanup: Xoá các bản ghi blacklist hết hạn nhưng giữ nguyên token còn hạn', () => {
+      const expiredRevoked = auth.signToken({ userId: 'u_exp', role: 'PASSENGER' }, -60);
+      const activeRevoked = auth.signToken({ userId: 'u_act', role: 'PASSENGER' }, 3600);
+
+      const expHash = auth.hashToken(expiredRevoked);
+      const actHash = auth.hashToken(activeRevoked);
+
+      auth.revokeToken(activeRevoked, service.db);
+      service.db.run(
+        'INSERT OR REPLACE INTO token_blacklist (token_hash, expires_at) VALUES (?, ?);',
+        expHash,
+        Math.floor(Date.now() / 1000) - 5
+      );
+
+      assert(service.db.get('SELECT token_hash FROM token_blacklist WHERE token_hash = ?;', expHash));
+      const deleted = auth.cleanupExpiredBlacklist(service.db);
+      assert(deleted >= 1, 'Phải xoá ít nhất 1 bản ghi blacklist hết hạn');
+      assert.strictEqual(service.db.get('SELECT token_hash FROM token_blacklist WHERE token_hash = ?;', expHash), undefined);
+      assert(service.db.get('SELECT token_hash FROM token_blacklist WHERE token_hash = ?;', actHash), 'Token chưa hết hạn phải được giữ lại');
+    });
+
+    // 18. Security Config: Production fail-fast khi thiếu JWT_SECRET hoặc INTERNAL_KEY
+    await test('Production Fail-Fast: Từ chối khởi động khi NODE_ENV=production với secret mặc định/thiếu', () => {
+      const configPath = path.resolve(__dirname, '../src/identity-service/config.js').replace(/\\/g, '/');
+      const runMissingJwt = spawnSync(process.execPath, ['-e', `require('${configPath}')`], {
+        env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: '', INTERNAL_KEY: 'custom-strong-internal-key-123' },
+        encoding: 'utf8',
+      });
+      assert.notStrictEqual(runMissingJwt.status, 0, 'Phải crash fail-fast khi thiếu JWT_SECRET ở production');
+
+      const runDefaultInternal = spawnSync(process.execPath, ['-e', `require('${configPath}')`], {
+        env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'custom-strong-jwt-secret-1234', INTERNAL_KEY: 'dev-internal-service-key-ds03' },
+        encoding: 'utf8',
+      });
+      assert.notStrictEqual(runDefaultInternal.status, 0, 'Phải crash fail-fast khi dùng INTERNAL_KEY mặc định ở production');
     });
 
   } finally {
@@ -383,6 +452,7 @@ async function runTests() {
   }
 
   console.log(`\n🎉 KẾT QUẢ: ${passed}/${total} TESTS PASSED CHO IDENTITY/USER SERVICE!`);
+  return { passed, total };
 }
 
 if (require.main === module) {

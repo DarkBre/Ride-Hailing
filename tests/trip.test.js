@@ -7,11 +7,15 @@
 
 const assert = require('node:assert');
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
 const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
 const { createTripService } = require('../src/trip-service');
 const { PricingEngine } = require('../src/trip-service/pricing-engine');
 const { haversineDistanceKm } = require('../src/trip-service/geo');
+const { createHttpPublisher } = require('../src/trip-service/outbox');
+const { verifyToken: verifyTripToken } = require('../src/trip-service/auth');
 const { signToken } = require('../src/identity-service/auth');
 
 const TEST_PORT = 8903;
@@ -140,12 +144,16 @@ async function runTests() {
       assert.strictEqual(surge1, 1.0);
     });
 
-    // 2. FT-05: Tạo cuốc xe hợp lệ & lưu Outbox
+    const passengerToken1 = signToken({ userId: 'passenger_test_01', role: 'PASSENGER', email: 'p1@test.com' });
+    const driverTokenD01 = signToken({ userId: 'driver_d01', role: 'DRIVER', email: 'd01@test.com' });
+
+    // 2. FT-05: Tạo cuốc xe hợp lệ & lưu Outbox (bắt buộc JWT PASSENGER, chặn giả mạo passenger_id/fare)
     let createdTripId = null;
-    await test('FT-05: Tạo cuốc xe thành công (HTTP 201) và sinh Outbox event', async () => {
+    await test('FT-05: Tạo cuốc xe thành công (HTTP 201), sinh Outbox event và không cho giả mạo passenger_id/fare', async () => {
       const res = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: {
           pickup_latitude: 21.028511,
           pickup_longitude: 105.854444,
@@ -153,21 +161,25 @@ async function runTests() {
           dropoff_latitude: 21.035789,
           dropoff_longitude: 105.841234,
           dropoff_address: '88 Cau Giay, Ha Noi',
-          passenger_id: 'passenger_test_01',
+          passenger_id: 'attacker_spoofed_id',
+          driver_id: 'attacker_spoofed_driver',
+          fare: 1,
         },
       });
 
       assert.strictEqual(res.status, 201);
       assert.strictEqual(res.body.success, true);
       assert.strictEqual(res.body.data.status, 'REQUESTED');
-      assert(res.body.data.estimated_fare > 0);
+      assert(res.body.data.estimated_fare >= 15000, 'Giá cước phải được tính ở server, không dùng fare giả mạo');
       assert(res.body.data.distance_km > 0);
       assert(res.body.data.surge_multiplier >= 1.0);
       createdTripId = res.body.data.id;
 
-      // Kiểm tra trong database: bảng trips
+      // Kiểm tra trong database: bảng trips (passenger_id lấy từ JWT chứ không phải body)
       const tripInDb = service.db.get('SELECT * FROM trips WHERE id = ?;', createdTripId);
       assert(tripInDb, 'Bản ghi trip phải tồn tại trong trip_db');
+      assert.strictEqual(tripInDb.passenger_id, 'passenger_test_01', 'Phải lấy passenger_id từ JWT token, bỏ qua body spoofing');
+      assert.strictEqual(tripInDb.driver_id, null, 'driver_id khởi tạo phải là null');
       assert.strictEqual(tripInDb.status, 'REQUESTED');
 
       // Kiểm tra trong database: bảng outbox_events
@@ -179,10 +191,11 @@ async function runTests() {
     });
 
     // 3. ST-02: Input Validation cho Trip Service
-    await test('ST-02: Toạ độ ngoài phạm vi Trái Đất bị chặn (HTTP 400)', async () => {
+    await test('ST-02: Toạ độ ngoài phạm vi Trái Đất và chuỗi rỗng/null bị chặn (HTTP 400)', async () => {
       const res = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: {
           pickup_latitude: 999.0, // Sai
           pickup_longitude: 105.85,
@@ -194,12 +207,29 @@ async function runTests() {
       });
       assert.strictEqual(res.status, 400);
       assert.strictEqual(res.body.error.code, 'INVALID_COORDINATES');
+
+      const resEmpty = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
+        body: {
+          pickup_latitude: '',
+          pickup_longitude: null,
+          pickup_address: 'A',
+          dropoff_latitude: 21.0,
+          dropoff_longitude: 105.8,
+          dropoff_address: 'B',
+        },
+      });
+      assert.strictEqual(resEmpty.status, 400);
+      assert.strictEqual(resEmpty.body.error.code, 'INVALID_COORDINATES');
     });
 
     await test('ST-02: Điểm đón và điểm đến trùng nhau bị chặn (HTTP 400)', async () => {
       const res = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: {
           pickup_latitude: 21.0285,
           pickup_longitude: 105.8544,
@@ -217,6 +247,7 @@ async function runTests() {
       const res = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: {
           pickup_latitude: 21.0285,
           pickup_longitude: 105.8544,
@@ -247,7 +278,7 @@ async function runTests() {
       const res1 = await makeRequest({
         method: 'POST',
         path: '/trips',
-        headers: { 'idempotency-key': idempKey },
+        headers: { 'idempotency-key': idempKey, Authorization: `Bearer ${passengerToken1}` },
         body: payload,
       });
       assert.strictEqual(res1.status, 201);
@@ -257,7 +288,7 @@ async function runTests() {
       const res2 = await makeRequest({
         method: 'POST',
         path: '/trips',
-        headers: { 'idempotency-key': idempKey },
+        headers: { 'idempotency-key': idempKey, Authorization: `Bearer ${passengerToken1}` },
         body: payload,
       });
       assert.strictEqual(res2.status, 201);
@@ -270,7 +301,7 @@ async function runTests() {
 
     // 5. FT-08 & State Machine: Vòng đời chuyển trạng thái
     await test('FT-08: Vòng đời chuyến xe (DRIVER_ASSIGNED -> ACCEPTED -> IN_PROGRESS -> COMPLETED)', async () => {
-      // 5.1. Giả lập Matching Service gán tài xế d01
+      // 5.1. Giả lập Matching Service gán tài xế driver_d01
       service.db.run(
         "UPDATE trips SET status = 'DRIVER_ASSIGNED', driver_id = 'driver_d01' WHERE id = ?;",
         createdTripId
@@ -280,6 +311,7 @@ async function runTests() {
       const resAccept = await makeRequest({
         method: 'POST',
         path: `/trips/${createdTripId}/accept`,
+        headers: { Authorization: `Bearer ${driverTokenD01}` },
       });
       assert.strictEqual(resAccept.status, 200);
       assert.strictEqual(resAccept.body.data.status, 'ACCEPTED');
@@ -288,6 +320,7 @@ async function runTests() {
       const resStart = await makeRequest({
         method: 'POST',
         path: `/trips/${createdTripId}/start`,
+        headers: { Authorization: `Bearer ${driverTokenD01}` },
       });
       assert.strictEqual(resStart.status, 200);
       assert.strictEqual(resStart.body.data.status, 'IN_PROGRESS');
@@ -296,6 +329,7 @@ async function runTests() {
       const resComplete = await makeRequest({
         method: 'POST',
         path: `/trips/${createdTripId}/complete`,
+        headers: { Authorization: `Bearer ${driverTokenD01}` },
       });
       assert.strictEqual(resComplete.status, 200);
       assert.strictEqual(resComplete.body.data.status, 'COMPLETED');
@@ -313,6 +347,7 @@ async function runTests() {
       const resCancel = await makeRequest({
         method: 'POST',
         path: `/trips/${createdTripId}/cancel`,
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: { reason: 'Muốn huỷ sau khi đã xong' },
       });
       assert.strictEqual(resCancel.status, 400);
@@ -407,9 +442,11 @@ async function runTests() {
       assert.strictEqual(resY.body.error.code, 'FORBIDDEN');
     });
 
-    // 9. Section 6.3: Cùng Idempotency-Key nhưng khác payload bị chặn (HTTP 409 Conflict)
-    await test('Section 6.3: Cùng Idempotency-Key nhưng khác payload trả về HTTP 409 Conflict', async () => {
+    // 9. Section 6.3: Cùng Idempotency-Key nhưng khác payload bị chặn (HTTP 409) & Cách ly theo từng Passenger
+    await test('Section 6.3: Cùng Idempotency-Key khác payload -> HTTP 409, và khác Passenger được cách ly độc lập', async () => {
       const conflictKey = 'idemp_key_conflict_999';
+      const tokenPA = signToken({ userId: 'passenger_scope_A', role: 'PASSENGER' });
+      const tokenPB = signToken({ userId: 'passenger_scope_B', role: 'PASSENGER' });
       const payloadA = {
         pickup_latitude: 21.02,
         pickup_longitude: 105.85,
@@ -430,24 +467,84 @@ async function runTests() {
       const res1 = await makeRequest({
         method: 'POST',
         path: '/trips',
-        headers: { 'idempotency-key': conflictKey },
+        headers: { 'idempotency-key': conflictKey, Authorization: `Bearer ${tokenPA}` },
         body: payloadA,
       });
       assert.strictEqual(res1.status, 201);
 
-      // Gửi lại cùng key nhưng payload B khác biệt
+      // Cùng Passenger A dùng lại key nhưng đổi payload -> 409 Conflict
       const res2 = await makeRequest({
         method: 'POST',
         path: '/trips',
-        headers: { 'idempotency-key': conflictKey },
+        headers: { 'idempotency-key': conflictKey, Authorization: `Bearer ${tokenPA}` },
         body: payloadB,
       });
       assert.strictEqual(res2.status, 409);
       assert.strictEqual(res2.body.error.code, 'IDEMPOTENCY_PAYLOAD_MISMATCH');
+
+      // Passenger B dùng cùng chuỗi key -> Được tạo cuốc độc lập (không rò rỉ dữ liệu của Passenger A)
+      const resOtherUser = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        headers: { 'idempotency-key': conflictKey, Authorization: `Bearer ${tokenPB}` },
+        body: payloadA,
+      });
+      assert.strictEqual(resOtherUser.status, 201);
+      assert.notStrictEqual(resOtherUser.body.data.id, res1.body.data.id, 'Hai hành khách khác nhau phải tạo 2 cuốc tách biệt');
     });
 
-    // 10. Webhook /internal/events yêu cầu X-Internal-Key
-    await test('Section 5.5: Webhook /internal/events chặn request thiếu X-Internal-Key (HTTP 401)', async () => {
+    // 10. ST-01 & Bảo mật: Bắt buộc xác thực JWT (chặn anonymous 401), chống vượt quyền chéo role/ownership
+    await test('ST-01 Security: Truy cập /trips không có JWT bị chặn HTTP 401, chặn Passenger/Driver lạ vượt quyền 403', async () => {
+      // 10.1. Gọi không token -> 401 UNAUTHORIZED
+      const resNoAuthCreate = await makeRequest({
+        method: 'POST',
+        path: '/trips',
+        body: {
+          pickup_latitude: 21.02,
+          pickup_longitude: 105.85,
+          pickup_address: 'A',
+          dropoff_latitude: 21.05,
+          dropoff_longitude: 105.82,
+          dropoff_address: 'B',
+          passenger_id: 'spoofed',
+        },
+      });
+      assert.strictEqual(resNoAuthCreate.status, 401);
+      assert.strictEqual(resNoAuthCreate.body.error.code, 'UNAUTHORIZED');
+
+      const tripTarget = service.db.get("SELECT id, passenger_id FROM trips WHERE status = 'REQUESTED' LIMIT 1;");
+      const resNoAuthGet = await makeRequest({ method: 'GET', path: `/trips/${tripTarget.id}` });
+      assert.strictEqual(resNoAuthGet.status, 401);
+
+      // 10.2. Tài xế chưa được gán không thể xem hoặc huỷ chuyến của người khác -> 403 FORBIDDEN
+      const tokenRandomDriver = signToken({ userId: 'driver_stranger', role: 'DRIVER' });
+      const resDriverGet = await makeRequest({
+        method: 'GET',
+        path: `/trips/${tripTarget.id}`,
+        headers: { Authorization: `Bearer ${tokenRandomDriver}` },
+      });
+      assert.strictEqual(resDriverGet.status, 403);
+
+      const resDriverCancel = await makeRequest({
+        method: 'POST',
+        path: `/trips/${tripTarget.id}/cancel`,
+        headers: { Authorization: `Bearer ${tokenRandomDriver}` },
+      });
+      assert.strictEqual(resDriverCancel.status, 403);
+
+      // 10.3. Hành khách không được phép gọi /start hoặc /complete -> 403 FORBIDDEN
+      const ownerToken = signToken({ userId: tripTarget.passenger_id, role: 'PASSENGER' });
+      const resPassengerStart = await makeRequest({
+        method: 'POST',
+        path: `/trips/${tripTarget.id}/start`,
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+      assert.strictEqual(resPassengerStart.status, 403);
+      assert.strictEqual(resPassengerStart.body.error.code, 'FORBIDDEN');
+    });
+
+    // 11. Webhook /internal/events yêu cầu X-Internal-Key và event_id
+    await test('Section 5.5: Webhook /internal/events chặn thiếu/sai X-Internal-Key (401) và thiếu event_id (400)', async () => {
       const res = await makeRequest({
         method: 'POST',
         path: '/internal/events',
@@ -455,59 +552,107 @@ async function runTests() {
       });
       assert.strictEqual(res.status, 401);
       assert.strictEqual(res.body.error.code, 'UNAUTHORIZED_INTERNAL');
+
+      const resNoEvtId = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: { 'x-internal-key': 'dev-internal-service-key-ds03' },
+        body: { event_type: 'trip.event.driver_matched', payload: { trip_id: 'x', driver_id: 'y' } },
+      });
+      assert.strictEqual(resNoEvtId.status, 400);
+      assert.strictEqual(resNoEvtId.body.error.code, 'INVALID_EVENT');
     });
 
-    // 11. Hạng mục P0: Kiểm tra Outbox Publisher mạng thật & Chịu lỗi khi Broker sập/khôi phục
-    await test('Outbox Publisher: Broker mất kết nối -> Event giữ nguyên PENDING, tăng retry_count (Không fake PUBLISHED)', async () => {
-      // 11.1. Chèn sự kiện thử nghiệm vào Outbox
-      const evt = service.outboxManager.insertEvent({
-        aggregateType: 'TRIP',
-        aggregateId: 'test_trip_outbox_offline',
-        eventType: 'trip.event.created',
-        payload: { trip_id: 'test_trip_outbox_offline', fare: 30000 },
+    // 12. Hạng mục P0: Kiểm tra Outbox HTTP Publisher qua TCP Socket thật & Mock HTTP Test Server
+    await test('Outbox HTTP Adapter: Mất kết nối TCP thật (ECONNREFUSED) -> Giữ PENDING, tăng retry_count', async () => {
+      // Lấy một cổng TCP rảnh rồi đóng ngay lập tức để bảo đảm ECONNREFUSED qua socket thật
+      const closedPort = await new Promise((resolve, reject) => {
+        const probe = net.createServer();
+        probe.listen(0, '127.0.0.1', () => {
+          const { port } = probe.address();
+          probe.close(() => resolve(port));
+        });
+        probe.on('error', reject);
       });
 
-      // Tạo một publisher trỏ vào cổng không tồn tại (giả lập Broker sập)
-      const offlinePublisher = (envelope) => {
-        return new Promise((_, reject) => {
-          reject(new Error('connect ECONNREFUSED 127.0.0.1:59999'));
-        });
-      };
+      const evt = service.outboxManager.insertEvent({
+        aggregateType: 'TRIP',
+        aggregateId: 'test_trip_outbox_real_tcp',
+        eventType: 'trip.event.created',
+        payload: { trip_id: 'test_trip_outbox_real_tcp', fare: 30000 },
+        correlationId: 'corr_real_tcp_001',
+      });
 
-      // Thực hiện quét outbox khi broker offline
-      await service.outboxManager.flushPending(offlinePublisher);
+      const realUnreachablePublisher = createHttpPublisher(`http://127.0.0.1:${closedPort}`);
+      const flushed = await service.outboxManager.flushPending(realUnreachablePublisher);
+      assert.strictEqual(flushed, 0, 'Không được đếm là đã publish khi kết nối TCP bị từ chối');
 
-      // Kiểm tra trong DB: Event KHÔNG được đánh dấu PUBLISHED mà vẫn là PENDING, retry_count = 1
       const savedEvt = service.db.get('SELECT * FROM outbox_events WHERE id = ?;', evt.eventId);
-      assert.strictEqual(savedEvt.status, 'PENDING', 'Sự kiện phải giữ nguyên PENDING khi broker offline');
-      assert.strictEqual(savedEvt.retry_count, 1, 'retry_count phải được tăng lên 1');
+      assert.strictEqual(savedEvt.status, 'PENDING', 'Sự kiện phải giữ nguyên PENDING khi broker TCP không kết nối được');
+      assert.strictEqual(savedEvt.retry_count, 1, 'retry_count phải tăng lên 1');
       assert.strictEqual(savedEvt.published_at, null, 'published_at phải là null');
     });
 
-    await test('Outbox Publisher: Broker phục hồi -> Event được gửi thành công và chuyển sang PUBLISHED', async () => {
-      // Giả lập Broker đã phục hồi và nhận envelope thành công
-      const receivedByBroker = [];
-      const recoveredPublisher = async (envelope) => {
-        receivedByBroker.push(envelope);
-        return { acknowledged: true, statusCode: 200 };
-      };
+    await test('Outbox HTTP Adapter: HTTP 503 từ chối ACK -> Retry giữ PENDING; HTTP 200 ACK -> Chuyển PUBLISHED (Real Local HTTP Server)', async () => {
+      let respondStatus = 503;
+      const capturedRequests = [];
 
-      // Quét lại outbox
-      const count = await service.outboxManager.flushPending(recoveredPublisher);
-      assert(count >= 1, 'Phải publish thành công ít nhất 1 sự kiện');
+      const mockHttpBroker = http.createServer(async (req, res) => {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        capturedRequests.push({
+          method: req.method,
+          url: req.url,
+          headers: req.headers,
+          body,
+        });
+        res.writeHead(respondStatus, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ received: respondStatus < 300 }));
+      });
 
-      // Kiểm tra trong DB: Event đã được chuyển sang PUBLISHED
-      const publishedEvt = service.db.get("SELECT * FROM outbox_events WHERE aggregate_id = 'test_trip_outbox_offline';");
-      assert.strictEqual(publishedEvt.status, 'PUBLISHED', 'Sự kiện phải chuyển thành PUBLISHED sau khi gửi thành công');
-      assert(publishedEvt.published_at !== null, 'published_at phải có giá trị thời gian');
-      assert.strictEqual(receivedByBroker.length >= 1, true, 'Broker phải nhận được envelope sự kiện');
+      await new Promise((resolve) => mockHttpBroker.listen(0, '127.0.0.1', resolve));
+      const { port: mockPort } = mockHttpBroker.address();
+
+      try {
+        const realHttpPublisher = createHttpPublisher(`http://127.0.0.1:${mockPort}`);
+
+        // Pha 1: Local HTTP Broker Test Server trả về 503 -> KHÔNG được đánh dấu PUBLISHED
+        await service.outboxManager.flushPending(realHttpPublisher);
+        const evtAfter503 = service.db.get("SELECT * FROM outbox_events WHERE aggregate_id = 'test_trip_outbox_real_tcp';");
+        assert.strictEqual(evtAfter503.status, 'PENDING', 'Broker trả 503 thì sự kiện vẫn phải ở trạng thái PENDING');
+        assert.strictEqual(evtAfter503.retry_count, 2, 'retry_count phải tăng lên 2');
+
+        // Pha 2: Broker phục hồi trả 200 OK -> Phải chuyển sang PUBLISHED và xác minh đúng Contract Envelope
+        respondStatus = 200;
+        const count = await service.outboxManager.flushPending(realHttpPublisher);
+        assert(count >= 1, 'Phải publish thành công qua HTTP POST thật');
+
+        const publishedEvt = service.db.get("SELECT * FROM outbox_events WHERE aggregate_id = 'test_trip_outbox_real_tcp';");
+        assert.strictEqual(publishedEvt.status, 'PUBLISHED');
+        assert(publishedEvt.published_at !== null);
+
+        const ackedReq = capturedRequests.find(
+          (r) => r.body && r.body.payload && r.body.payload.trip_id === 'test_trip_outbox_real_tcp' && capturedRequests.indexOf(r) > 0
+        );
+        assert(ackedReq, 'Test HTTP Broker Server phải nhận được HTTP POST thật');
+        assert.strictEqual(ackedReq.method, 'POST');
+        assert.strictEqual(ackedReq.url, '/events');
+        assert.strictEqual(ackedReq.headers['x-internal-key'], 'dev-internal-service-key-ds03');
+        assert.strictEqual(ackedReq.headers['x-correlation-id'], 'corr_real_tcp_001');
+        assert.strictEqual(ackedReq.body.event_type, 'trip.event.created');
+        assert.strictEqual(ackedReq.body.source_service, 'trip-service');
+      } finally {
+        await new Promise((resolve) => mockHttpBroker.close(resolve));
+      }
     });
 
-    // 12. Hạng mục P1: Kiểm tra State Machine - Chặn chuyển trạng thái bất hợp lệ
+    // 13. Hạng mục P1: Kiểm tra State Machine - Chặn chuyển trạng thái bất hợp lệ
     await test('State Machine: Chặn nhảy trạng thái trái phép từ REQUESTED sang IN_PROGRESS (HTTP 400)', async () => {
       const resCreate = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: {
           pickup_latitude: 21.02,
           pickup_longitude: 105.85,
@@ -520,20 +665,24 @@ async function runTests() {
       assert.strictEqual(resCreate.body.data.status, 'REQUESTED', 'Trạng thái khởi tạo bắt buộc phải là REQUESTED');
       const tripId = resCreate.body.data.id;
 
-      // Cố tình gọi /start khi chưa DRIVER_ASSIGNED và ACCEPTED
+      // Gán tài xế driver_d01 nhưng giữ nguyên status = REQUESTED (chưa ACCEPTED)
+      service.db.run("UPDATE trips SET driver_id = 'driver_d01' WHERE id = ?;", tripId);
+
+      // Tài xế cố tình gọi /start khi chưa chuyển qua DRIVER_ASSIGNED -> ACCEPTED
       const resStart = await makeRequest({
         method: 'POST',
         path: `/trips/${tripId}/start`,
+        headers: { Authorization: `Bearer ${driverTokenD01}` },
       });
       assert.strictEqual(resStart.status, 400);
       assert.strictEqual(resStart.body.error.code, 'INVALID_STATE_TRANSITION');
     });
 
     await test('Saga Bù trừ: Huỷ chuyến khi đã CONFIRMED -> Sinh cả release_driver lẫn payment.event.refund_requested', async () => {
-      // Tạo chuyến mới và giả lập chuyển sang CONFIRMED kèm tài xế
       const resCreate = await makeRequest({
         method: 'POST',
         path: '/trips',
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: {
           pickup_latitude: 21.02,
           pickup_longitude: 105.85,
@@ -555,6 +704,7 @@ async function runTests() {
       const resCancel = await makeRequest({
         method: 'POST',
         path: `/trips/${confirmedTripId}/cancel`,
+        headers: { Authorization: `Bearer ${passengerToken1}` },
         body: { reason: 'Khách đổi kế hoạch' },
       });
       assert.strictEqual(resCancel.status, 200);
@@ -568,11 +718,34 @@ async function runTests() {
         "SELECT * FROM outbox_events WHERE aggregate_id = ? AND event_type = 'payment.event.refund_requested';",
         confirmedTripId
       );
+      const sagaAfterCancel = service.sagaCoordinator.getSagaStatus(confirmedTripId);
 
       assert(releaseDriver, 'Phải có sự kiện bù trừ release_driver');
       assert(refundPayment, 'Phải có sự kiện bù trừ payment.event.refund_requested');
       assert.strictEqual(JSON.parse(releaseDriver.payload).driver_id, 'driver_d88');
       assert(JSON.parse(refundPayment.payload).amount > 0);
+      assert.strictEqual(sagaAfterCancel.status, 'COMPENSATED', 'Saga phải đồng bộ sang COMPENSATED khi huỷ chuyến đã giữ tài xế/tiền');
+    });
+
+    // 14. Boundary Tests: Toạ độ đường xích đạo lat=0, JWT now>=exp tại Trip Service và Fail-Fast Production
+    await test('Boundary & Fail-Fast: Tính đúng Haversine tại lat=0, chặn JWT tại now===exp và Production Fail-Fast', () => {
+      // 14.1. Toạ độ xích đạo lat = 0 không bị lỗi coercion falsy `0 || ...`
+      const eqDist = haversineDistanceKm({ lat: 0, lon: 105.0 }, { lat: 0, lon: 105.1 });
+      assert(eqDist > 10 && eqDist < 12, `Khoảng cách dọc xích đạo 0.1 độ kinh tuyến phải ~11.12km (thực tế: ${eqDist})`);
+
+      // 14.2. Trip Service JWT boundary now === exp
+      const tokenExp0 = signToken({ userId: 'u_bound', role: 'PASSENGER' }, 0);
+      const expClaim = JSON.parse(Buffer.from(tokenExp0.split('.')[1], 'base64url').toString('utf8')).exp;
+      assert(verifyTripToken(tokenExp0, expClaim - 1) !== null);
+      assert.strictEqual(verifyTripToken(tokenExp0, expClaim), null, 'Trip auth phải từ chối tại đúng mốc now === exp');
+
+      // 14.3. Production Fail-Fast trong trip-service/config.js
+      const configPath = path.resolve(__dirname, '../src/trip-service/config.js').replace(/\\/g, '/');
+      const runFail = spawnSync(process.execPath, ['-e', `require('${configPath}')`], {
+        env: { ...process.env, NODE_ENV: 'production', JWT_SECRET: 'dev-jwt-secret-key-ds03-2026', INTERNAL_KEY: 'custom-strong-internal-key-999' },
+        encoding: 'utf8',
+      });
+      assert.notStrictEqual(runFail.status, 0, 'Trip Service phải fail-fast khi NODE_ENV=production mà dùng JWT_SECRET mặc định');
     });
 
   } finally {
@@ -581,6 +754,7 @@ async function runTests() {
   }
 
   console.log(`\n🎉 KẾT QUẢ: ${passed}/${total} TESTS PASSED CHO TRIP / BOOKING SERVICE!`);
+  return { passed, total };
 }
 
 if (require.main === module) {

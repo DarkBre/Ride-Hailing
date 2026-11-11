@@ -136,9 +136,11 @@ function createRoutes(db) {
           throw err;
         }
 
-        // Ký JWT Token
+        // Ký JWT Token (bao gồm cả userId, user_id, sub để tương thích mọi consumer)
         const token = auth.signToken({
+          sub: user.id,
           userId: user.id,
+          user_id: user.id,
           email: user.email,
           role: user.role,
         });
@@ -208,7 +210,7 @@ function createRoutes(db) {
       status: 200,
       handler: async ({ headers, body }) => {
         const internalKey = headers['x-internal-key'];
-        if (!internalKey || internalKey !== config.INTERNAL_KEY) {
+        if (!auth.safeCompare(internalKey, config.INTERNAL_KEY)) {
           const err = new Error('Yêu cầu x-internal-key hợp lệ để truy cập endpoint nội bộ');
           err.status = 401;
           err.code = 'UNAUTHORIZED_INTERNAL';

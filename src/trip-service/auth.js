@@ -10,15 +10,36 @@ function base64UrlDecode(str) {
 }
 
 /**
- * Xác thực JWT token trên Trip Service
+ * So sánh chuỗi bí mật an toàn chống timing attack
  */
-function verifyToken(token) {
+function safeCompare(provided, expected) {
+  if (!provided || !expected || typeof provided !== 'string' || typeof expected !== 'string') {
+    return false;
+  }
+  const h1 = crypto.createHash('sha256').update(provided).digest();
+  const h2 = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(h1, h2);
+}
+
+/**
+ * Xác thực JWT token trên Trip Service (HS256, kiểm tra claims & mốc now >= exp)
+ */
+function verifyToken(token, nowSeconds = Math.floor(Date.now() / 1000)) {
   if (!token || typeof token !== 'string') return null;
 
   const parts = token.split('.');
   if (parts.length !== 3) return null;
 
   const [encodedHeader, encodedPayload, signature] = parts;
+
+  try {
+    const header = JSON.parse(base64UrlDecode(encodedHeader));
+    if (!header || header.alg !== 'HS256') {
+      return null;
+    }
+  } catch (_) {
+    return null;
+  }
 
   let expectedSignature;
   try {
@@ -41,11 +62,20 @@ function verifyToken(token) {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
+    if (!payload || typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
       return null;
     }
-    return payload;
+    if (nowSeconds >= payload.exp) {
+      return null;
+    }
+    const resolvedUserId = payload.userId || payload.user_id || payload.sub;
+    if (!resolvedUserId || typeof resolvedUserId !== 'string' || !payload.role || typeof payload.role !== 'string') {
+      return null;
+    }
+    return {
+      ...payload,
+      userId: resolvedUserId,
+    };
   } catch (_) {
     return null;
   }
@@ -58,8 +88,11 @@ function extractCaller(headers) {
   if (!headers) return null;
 
   const internalKey = headers['x-internal-key'];
-  if (internalKey && internalKey === config.INTERNAL_KEY) {
-    return { isInternal: true, role: 'INTERNAL' };
+  if (internalKey) {
+    if (safeCompare(internalKey, config.INTERNAL_KEY)) {
+      return { isInternal: true, role: 'INTERNAL' };
+    }
+    return { isInvalidInternalKey: true };
   }
 
   const authHeader = headers['authorization'] || '';
@@ -71,7 +104,7 @@ function extractCaller(headers) {
         isInternal: false,
         userId: decoded.userId,
         email: decoded.email,
-        role: decoded.role,
+        role: String(decoded.role).toUpperCase(),
       };
     }
     return { isInvalidToken: true };
@@ -81,6 +114,7 @@ function extractCaller(headers) {
 }
 
 module.exports = {
+  safeCompare,
   verifyToken,
   extractCaller,
 };

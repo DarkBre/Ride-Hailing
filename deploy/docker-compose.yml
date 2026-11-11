@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   identity-service:
     build:
@@ -9,9 +7,9 @@ services:
       - "8001:8001"
     environment:
       - PORT=8001
-      - NODE_ENV=production
-      - JWT_SECRET=prod-jwt-secret-key-ds03-change-me
-      - INTERNAL_KEY=prod-internal-key-ds03
+      - NODE_ENV=${NODE_ENV:-production}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set via .env}
+      - INTERNAL_KEY=${INTERNAL_KEY:?INTERNAL_KEY must be set via .env}
     volumes:
       - identity-data:/app/data
 
@@ -23,10 +21,10 @@ services:
       - "8003:8003"
     environment:
       - PORT=8003
-      - NODE_ENV=production
-      - JWT_SECRET=prod-jwt-secret-key-ds03-change-me
-      - INTERNAL_KEY=prod-internal-key-ds03
-      - URL_BROKER=http://broker-service:4000
+      - NODE_ENV=${NODE_ENV:-production}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set via .env}
+      - INTERNAL_KEY=${INTERNAL_KEY:?INTERNAL_KEY must be set via .env}
+      - URL_BROKER=${URL_BROKER:-http://broker-service:4000}
     volumes:
       - trip-data:/app/data
 

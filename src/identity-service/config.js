@@ -7,10 +7,19 @@ const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'user_db.sqlite');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret-key-ds03-2026';
+const DEFAULT_JWT_SECRET = 'dev-jwt-secret-key-ds03-2026';
+const DEFAULT_INTERNAL_KEY = 'dev-internal-service-key-ds03';
 
-if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-jwt-secret-key-ds03-2026')) {
-  throw new Error('FATAL: JWT_SECRET bảo mật bắt buộc phải được thiết lập qua biến môi trường trong production!');
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+const INTERNAL_KEY = process.env.INTERNAL_KEY || DEFAULT_INTERNAL_KEY;
+
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEFAULT_JWT_SECRET || process.env.JWT_SECRET.length < 16) {
+    throw new Error('FATAL: JWT_SECRET bảo mật (>= 16 ký tự, khác mặc định) bắt buộc phải thiết lập trong production!');
+  }
+  if (!process.env.INTERNAL_KEY || process.env.INTERNAL_KEY === DEFAULT_INTERNAL_KEY || process.env.INTERNAL_KEY.length < 16) {
+    throw new Error('FATAL: INTERNAL_KEY bảo mật (>= 16 ký tự, khác mặc định) bắt buộc phải thiết lập trong production!');
+  }
 }
 
 module.exports = {
@@ -19,6 +28,6 @@ module.exports = {
   DB_PATH,
   JWT_SECRET,
   JWT_EXPIRES_IN: Number(process.env.JWT_EXPIRES_IN || 86400), // 24 giờ
-  INTERNAL_KEY: process.env.INTERNAL_KEY || 'dev-internal-service-key-ds03',
+  INTERNAL_KEY,
   NODE_ENV: process.env.NODE_ENV || 'development',
 };

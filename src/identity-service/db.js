@@ -36,14 +36,32 @@ function initDatabase(customDbPath = null) {
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
-    -- Bảng lưu trữ token đã thu hồi (Persistent Blacklist)
+    -- Bảng lưu trữ hash của token đã thu hồi (Persistent Blacklist, không lưu raw token)
     CREATE TABLE IF NOT EXISTS token_blacklist (
-      token TEXT PRIMARY KEY,
+      token_hash TEXT PRIMARY KEY,
       revoked_at TEXT DEFAULT (datetime('now')),
       expires_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist(expires_at);
   `);
+
+  // Bảo đảm tương thích nếu DB cũ dùng cột 'token' thay vì 'token_hash'
+  try {
+    const cols = db.prepare('PRAGMA table_info(token_blacklist);').all();
+    const hasOldTokenCol = cols.some((c) => c.name === 'token');
+    const hasHashCol = cols.some((c) => c.name === 'token_hash');
+    if (hasOldTokenCol && !hasHashCol) {
+      db.exec('DROP TABLE token_blacklist;');
+      db.exec(`
+        CREATE TABLE token_blacklist (
+          token_hash TEXT PRIMARY KEY,
+          revoked_at TEXT DEFAULT (datetime('now')),
+          expires_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_blacklist_expires ON token_blacklist(expires_at);
+      `);
+    }
+  } catch (_) {}
 
   return {
     raw: db,
