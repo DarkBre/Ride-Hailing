@@ -5,16 +5,41 @@ const url = require('node:url');
 const crypto = require('node:crypto');
 const config = require('./config');
 const { initDatabase } = require('./db');
-const { OutboxManager } = require('./outbox');
+const { OutboxManager, normalizeCorrelationId } = require('./outbox');
 const { SagaCoordinator } = require('./saga-coordinator');
 const { createRoutes } = require('./routes');
+const { TripBroker } = require('./broker');
+const { createDriverClient } = require('./driver-client');
 
 function createTripService(options = {}) {
   const port = options.port || config.PORT;
   const db = initDatabase(options.dbPath || null);
   const outboxManager = new OutboxManager(db, { onPublish: options.onPublish });
+
+  const shouldUseRabbitMq =
+    Boolean(options.broker) ||
+    (options.useRabbitMq !== false &&
+      (config.EVENT_TRANSPORT === 'rabbitmq' || Boolean(config.RABBITMQ_URL) || Boolean(options.amqpLib)));
+
+  const activeBroker =
+    options.broker ||
+    (shouldUseRabbitMq
+      ? new TripBroker({
+          amqpLib: options.amqpLib,
+          ...(options.brokerOptions || {}),
+        })
+      : null);
+
+  if (!options.onPublish && activeBroker) {
+    outboxManager.setPublishHandler((envelope) => activeBroker.publish(envelope));
+  }
+
   const sagaCoordinator = new SagaCoordinator(db, outboxManager);
-  const routes = createRoutes(db, sagaCoordinator, outboxManager);
+  const driverClient = options.driverClient || createDriverClient();
+  const routes = createRoutes(db, sagaCoordinator, outboxManager, {
+    broker: activeBroker,
+    driverClient,
+  });
 
   const server = http.createServer(async (req, res) => {
     // 1. CORS headers
@@ -28,8 +53,8 @@ function createTripService(options = {}) {
       return;
     }
 
-    // 2. Correlation ID
-    const correlationId = req.headers['x-correlation-id'] || `corr_${crypto.randomBytes(8).toString('hex')}`;
+    // 2. Correlation ID (chuẩn hoá khớp regex /^[\w.-]{1,100}$/ của Matching Service)
+    const correlationId = normalizeCorrelationId(req.headers['x-correlation-id']);
     res.setHeader('X-Correlation-ID', correlationId);
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -141,18 +166,27 @@ function createTripService(options = {}) {
     db,
     sagaCoordinator,
     outboxManager,
+    broker: activeBroker,
     start() {
       return new Promise((resolve) => {
         outboxManager.startWorker(1000);
-        server.listen(port, '0.0.0.0', () => {
-          console.log(`[TRIP-SERVICE] Đang chạy tại http://0.0.0.0:${port} (Port ${port})`);
+        server.listen(port, '0.0.0.0', async () => {
+          if (activeBroker) {
+            await activeBroker.connectWithRetry((envelope) => sagaCoordinator.dispatchEvent(envelope));
+          }
+          console.log(
+            `[TRIP-SERVICE] Đang chạy tại http://0.0.0.0:${port} (Port ${port}, transport=${activeBroker ? 'rabbitmq' : config.EVENT_TRANSPORT})`
+          );
           resolve(server);
         });
       });
     },
-    stop() {
+    async stop() {
+      outboxManager.stopWorker();
+      if (activeBroker) {
+        await activeBroker.close();
+      }
       return new Promise((resolve) => {
-        outboxManager.stopWorker();
         if (typeof server.closeAllConnections === 'function') {
           server.closeAllConnections();
         }

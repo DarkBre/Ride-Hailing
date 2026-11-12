@@ -8,7 +8,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function createRoutes(db) {
   return [
-    // 1. Health check
+    // 1. Health & Kubernetes/Docker Probes
     {
       method: 'GET',
       path: '/health',
@@ -17,6 +17,34 @@ function createRoutes(db) {
         service: 'identity-service',
         timestamp: new Date().toISOString(),
       }),
+    },
+    {
+      method: 'GET',
+      path: '/live',
+      handler: async () => ({
+        status: 'UP',
+        service: 'identity-service',
+        timestamp: new Date().toISOString(),
+      }),
+    },
+    {
+      method: 'GET',
+      path: '/ready',
+      handler: async () => {
+        try {
+          db.get('SELECT 1 AS ok;');
+          return {
+            ready: true,
+            service: 'identity-service',
+            timestamp: new Date().toISOString(),
+          };
+        } catch (err) {
+          const readinessErr = new Error(`SQLite chưa sẵn sàng: ${err.message}`);
+          readinessErr.status = 503;
+          readinessErr.code = 'NOT_READY';
+          throw readinessErr;
+        }
+      },
     },
 
     // 2. Đăng ký tài khoản (Hỗ trợ cả /auth/register và /api/v1/auth/register)
@@ -175,7 +203,8 @@ function createRoutes(db) {
           throw err;
         }
 
-        const user = db.get('SELECT id, email, name, phone, role, created_at FROM users WHERE id = ?;', decoded.userId);
+        const userId = decoded.userId || decoded.user_id || decoded.sub;
+        const user = db.get('SELECT id, email, name, phone, role, created_at FROM users WHERE id = ?;', userId);
         if (!user) {
           const err = new Error('Không tìm thấy thông tin người dùng');
           err.status = 404;
@@ -222,7 +251,8 @@ function createRoutes(db) {
         if (!decoded) {
           return { valid: false, user: null };
         }
-        const user = db.get('SELECT id, email, name, role FROM users WHERE id = ?;', decoded.userId);
+        const userId = decoded.userId || decoded.user_id || decoded.sub;
+        const user = db.get('SELECT id, email, name, role FROM users WHERE id = ?;', userId);
         if (!user) {
           return { valid: false, user: null };
         }

@@ -5,6 +5,7 @@ const { PricingEngine } = require('./pricing-engine');
 const { extractCaller, safeCompare } = require('./auth');
 const { SAGA_STATUS } = require('./saga-coordinator');
 const config = require('./config');
+const { createDriverClient } = require('./driver-client');
 
 function createError(status, code, message) {
   const err = new Error(message);
@@ -39,6 +40,14 @@ function parseCoordinate(value, min, max) {
 }
 
 /**
+ * Xác định caller có phải tài xế được gán cho chuyến (ưu tiên driver_user_id từ Driver Service, fallback driver_id)
+ */
+function isAssignedDriver(caller, trip) {
+  const assignedUserId = trip.driver_user_id || trip.driver_id;
+  return Boolean(assignedUserId && caller.userId === assignedUserId);
+}
+
+/**
  * Kiểm tra quyền thao tác tài xế được gán (ACCEPT / START / COMPLETE)
  */
 function assertDriverOwnership(caller, trip, actionDesc) {
@@ -46,16 +55,18 @@ function assertDriverOwnership(caller, trip, actionDesc) {
   if (caller.role !== 'DRIVER') {
     throw createError(403, 'FORBIDDEN', `Chỉ tài xế (DRIVER) mới có quyền ${actionDesc}`);
   }
-  if (!trip.driver_id || caller.userId !== trip.driver_id) {
+  if (!isAssignedDriver(caller, trip)) {
     throw createError(403, 'FORBIDDEN', `Bạn không phải tài xế được gán cho cuốc xe này để ${actionDesc}`);
   }
 }
 
-function createRoutes(db, sagaCoordinator, outboxManager) {
+function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
   const pricingEngine = new PricingEngine();
+  const driverClient = options.driverClient || createDriverClient();
+  const broker = options.broker || null;
 
   return [
-    // 1. Health check
+    // 1. Health / Liveness / Readiness checks
     {
       method: 'GET',
       path: '/health',
@@ -64,6 +75,35 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
         service: 'trip-service',
         timestamp: new Date().toISOString(),
       }),
+    },
+    {
+      method: 'GET',
+      path: '/live',
+      handler: async () => ({
+        status: 'alive',
+        service: 'trip-service',
+        timestamp: new Date().toISOString(),
+      }),
+    },
+    {
+      method: 'GET',
+      path: '/ready',
+      handler: async () => {
+        try {
+          db.get('SELECT 1 AS ok;');
+        } catch (err) {
+          throw createError(503, 'DB_NOT_READY', `SQLite chưa sẵn sàng: ${err.message}`);
+        }
+        if (broker && !broker.isReady()) {
+          throw createError(503, 'BROKER_NOT_READY', 'RabbitMQ broker chưa sẵn sàng');
+        }
+        return {
+          status: 'ready',
+          service: 'trip-service',
+          transport: broker ? 'rabbitmq' : config.EVENT_TRANSPORT,
+          timestamp: new Date().toISOString(),
+        };
+      },
     },
 
     // 2. Tạo cuốc xe mới (POST /trips và /api/v1/trips)
@@ -167,7 +207,13 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
           fiveMinutesAgoIso
         );
         const demand = demandRow ? demandRow.count : 0;
-        const supply = 3; // Giá trị mặc định khi Driver Service (TV2) chưa kết nối trực tiếp
+        const liveSupply = await driverClient.fetchAvailableSupply(
+          pLat,
+          pLon,
+          config.MATCHING_RADIUS_KM,
+          correlationId
+        );
+        const supply = Number.isFinite(liveSupply) ? liveSupply : 3; // Fallback khi Driver Service offline
 
         const fareResult = pricingEngine.calculateFare({
           pickup: { lat: pLat, lon: pLon },
@@ -243,7 +289,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
               throw createError(403, 'FORBIDDEN', 'Bạn không có quyền xem thông tin chuyến xe của người khác');
             }
           } else if (caller.role === 'DRIVER') {
-            if (!trip.driver_id || caller.userId !== trip.driver_id) {
+            if (!isAssignedDriver(caller, trip)) {
               throw createError(403, 'FORBIDDEN', 'Bạn không có quyền xem chuyến xe không được gán cho bạn');
             }
           } else {
@@ -265,8 +311,32 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       method: 'POST',
       path,
       status: 200,
-      handler: async ({ params, headers }) => {
+      handler: async ({ params, headers, correlationId }) => {
         const caller = requireCaller(headers);
+
+        const initialTrip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
+        if (!initialTrip) {
+          throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
+        }
+
+        assertDriverOwnership(caller, initialTrip, 'nhận cuốc xe');
+
+        if (!['DRIVER_ASSIGNED', 'CONFIRMED'].includes(initialTrip.status)) {
+          throw createError(
+            400,
+            'INVALID_STATE_TRANSITION',
+            `Không thể nhận chuyến ở trạng thái hiện tại: ${initialTrip.status}`
+          );
+        }
+
+        if (initialTrip.reservation_id) {
+          await driverClient.confirmReservation({
+            tripId: params.id,
+            driverId: initialTrip.driver_id,
+            reservationId: initialTrip.reservation_id,
+            correlationId,
+          });
+        }
 
         return db.tx(() => {
           const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
@@ -324,7 +394,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
       handler: async ({ params, headers, correlationId }) => {
         const caller = requireCaller(headers);
 
-        return db.tx(() => {
+        const txResult = db.tx(() => {
           const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
           if (!trip) {
             throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
@@ -347,14 +417,44 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
             payload: {
               trip_id: params.id,
               driver_id: trip.driver_id,
+              ...(trip.driver_user_id ? { driver_user_id: trip.driver_user_id } : {}),
               passenger_id: trip.passenger_id,
               fare: trip.fare,
             },
             correlationId,
           });
 
-          return { id: params.id, status: 'COMPLETED' };
+          if (trip.driver_id) {
+            outboxManager.insertEvent({
+              aggregateType: 'TRIP',
+              aggregateId: params.id,
+              eventType: 'trip.event.release_driver',
+              payload: {
+                trip_id: params.id,
+                driver_id: trip.driver_id,
+                ...(trip.reservation_id ? { reservation_id: trip.reservation_id } : {}),
+                reason: 'TRIP_COMPLETED',
+              },
+              correlationId,
+            });
+          }
+
+          return {
+            response: { id: params.id, status: 'COMPLETED' },
+            releaseInfo: trip.reservation_id
+              ? { tripId: params.id, driverId: trip.driver_id, reservationId: trip.reservation_id }
+              : null,
+          };
         });
+
+        if (txResult.releaseInfo) {
+          await driverClient.releaseReservation({
+            ...txResult.releaseInfo,
+            correlationId,
+          });
+        }
+
+        return txResult.response;
       },
     })),
 
@@ -367,7 +467,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
         const caller = requireCaller(headers);
         const { reason } = body || {};
 
-        return db.tx(() => {
+        const txResult = db.tx(() => {
           const trip = db.get('SELECT * FROM trips WHERE id = ?;', params.id);
           if (!trip) {
             throw createError(404, 'TRIP_NOT_FOUND', `Không tìm thấy cuốc xe với ID: ${params.id}`);
@@ -379,7 +479,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
                 throw createError(403, 'FORBIDDEN', 'Bạn không thể huỷ chuyến xe của người khác');
               }
             } else if (caller.role === 'DRIVER') {
-              if (!trip.driver_id || caller.userId !== trip.driver_id) {
+              if (!isAssignedDriver(caller, trip)) {
                 throw createError(403, 'FORBIDDEN', 'Bạn không phải tài xế của chuyến xe này để huỷ');
               }
             } else {
@@ -413,6 +513,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
               payload: {
                 trip_id: params.id,
                 driver_id: trip.driver_id,
+                ...(trip.reservation_id ? { reservation_id: trip.reservation_id } : {}),
                 reason: cancelReason,
               },
               correlationId,
@@ -448,8 +549,22 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
             params.id
           );
 
-          return { id: params.id, status: 'CANCELLED', reason: cancelReason };
+          return {
+            response: { id: params.id, status: 'CANCELLED', reason: cancelReason },
+            releaseInfo: trip.reservation_id
+              ? { tripId: params.id, driverId: trip.driver_id, reservationId: trip.reservation_id }
+              : null,
+          };
         });
+
+        if (txResult.releaseInfo) {
+          await driverClient.releaseReservation({
+            ...txResult.releaseInfo,
+            correlationId,
+          });
+        }
+
+        return txResult.response;
       },
     })),
 
@@ -471,51 +586,7 @@ function createRoutes(db, sagaCoordinator, outboxManager) {
           throw createError(400, 'INVALID_EVENT', 'Event envelope bắt buộc phải có event_id, event_type và payload');
         }
 
-        let result = null;
-
-        switch (event_type) {
-          case 'trip.event.driver_matched':
-            result = sagaCoordinator.handleDriverMatched({
-              eventId: event_id,
-              tripId: payload.trip_id,
-              driverId: payload.driver_id,
-              fare: payload.estimated_fare,
-              correlationId: correlation_id,
-            });
-            break;
-
-          case 'payment.event.hold_success':
-            result = sagaCoordinator.handlePaymentHoldSuccess({
-              eventId: event_id,
-              tripId: payload.trip_id,
-              correlationId: correlation_id,
-            });
-            break;
-
-          case 'payment.event.hold_failed':
-            result = sagaCoordinator.handlePaymentHoldFailed({
-              eventId: event_id,
-              tripId: payload.trip_id,
-              driverId: payload.driver_id,
-              reason: payload.reason,
-              correlationId: correlation_id,
-            });
-            break;
-
-          case 'trip.event.matching_failed':
-            result = sagaCoordinator.handleMatchingFailed({
-              eventId: event_id,
-              tripId: payload.trip_id,
-              reason: payload.reason,
-              correlationId: correlation_id,
-            });
-            break;
-
-          default:
-            result = { action: 'UNKNOWN_EVENT_IGNORED', event_type };
-        }
-
-        return result;
+        return sagaCoordinator.dispatchEvent(body);
       },
     },
   ];

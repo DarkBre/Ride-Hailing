@@ -27,6 +27,9 @@ function initDatabase(customDbPath = null) {
       id TEXT PRIMARY KEY,
       passenger_id TEXT NOT NULL,
       driver_id TEXT,
+      driver_user_id TEXT,
+      reservation_id TEXT,
+      reservation_expires_at TEXT,
       pickup_latitude REAL NOT NULL,
       pickup_longitude REAL NOT NULL,
       pickup_address TEXT,
@@ -47,11 +50,25 @@ function initDatabase(customDbPath = null) {
 
     CREATE INDEX IF NOT EXISTS idx_trips_passenger ON trips(passenger_id);
     CREATE INDEX IF NOT EXISTS idx_trips_driver ON trips(driver_id);
+    CREATE INDEX IF NOT EXISTS idx_trips_driver_user ON trips(driver_user_id);
     CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_trips_passenger_idempotency
       ON trips(passenger_id, idempotency_key)
       WHERE idempotency_key IS NOT NULL;
   `);
+
+  // Di trú an toàn cho DB SQLite cũ nếu đã tạo trước đợt tích hợp
+  const tripCols = db.prepare('PRAGMA table_info(trips);').all().map((c) => c.name);
+  if (!tripCols.includes('driver_user_id')) {
+    db.exec('ALTER TABLE trips ADD COLUMN driver_user_id TEXT;');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_trips_driver_user ON trips(driver_user_id);');
+  }
+  if (!tripCols.includes('reservation_id')) {
+    db.exec('ALTER TABLE trips ADD COLUMN reservation_id TEXT;');
+  }
+  if (!tripCols.includes('reservation_expires_at')) {
+    db.exec('ALTER TABLE trips ADD COLUMN reservation_expires_at TEXT;');
+  }
 
   // 2. Bảng outbox_events (Transactional Outbox Pattern)
   db.exec(`

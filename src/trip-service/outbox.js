@@ -4,15 +4,22 @@ const crypto = require('node:crypto');
 const http = require('node:http');
 const config = require('./config');
 
+function normalizeCorrelationId(value) {
+  if (typeof value === 'string' && /^[\w.-]{1,100}$/.test(value)) {
+    return value;
+  }
+  return `corr_${crypto.randomBytes(8).toString('hex')}`;
+}
+
 /**
  * Tạo HTTP Publisher gửi envelope sự kiện sang Message Broker (mặc định Port 4000)
  * Xác nhận Publisher Acknowledgment dựa trên HTTP Status 2xx từ Broker
  */
 function createHttpPublisher(customBrokerUrl = null) {
   return function httpPublisher(envelope) {
-    if (config.EVENT_TRANSPORT === 'amqp' && !customBrokerUrl) {
+    if (['amqp', 'rabbitmq'].includes(config.EVENT_TRANSPORT) && !customBrokerUrl) {
       return Promise.reject(
-        new Error('EVENT_TRANSPORT=amqp chưa có driver AMQP/RabbitMQ khả dụng trong runtime Pure Node.js')
+        new Error('EVENT_TRANSPORT=rabbitmq/amqp yêu cầu TripBroker (RABBITMQ_URL) thay vì HTTP Broker')
       );
     }
 
@@ -76,12 +83,19 @@ class OutboxManager {
   }
 
   /**
+   * Cập nhật publish handler lúc khởi động (ví dụ gắn RabbitMQ TripBroker)
+   */
+  setPublishHandler(handler) {
+    this.publishHandler = handler;
+  }
+
+  /**
    * Ghi nhận sự kiện vào bảng outbox_events (Thường gọi cùng trong 1 DB Transaction)
    */
   insertEvent({ aggregateType, aggregateId, eventType, payload, correlationId }) {
     const eventId = crypto.randomUUID();
     const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const corrId = correlationId || `corr_${crypto.randomBytes(8).toString('hex')}`;
+    const corrId = normalizeCorrelationId(correlationId);
     const now = new Date().toISOString();
 
     this.db.run(
@@ -209,4 +223,5 @@ module.exports = {
   OutboxManager,
   createHttpPublisher,
   defaultHttpPublisher,
+  normalizeCorrelationId,
 };
