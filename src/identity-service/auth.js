@@ -95,7 +95,14 @@ function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
   const iat = Math.floor(Date.now() / 1000);
   const jti = crypto.randomUUID();
 
-  const fullPayload = { ...payload, iat, exp, jti };
+  const fullPayload = {
+    ...payload,
+    ...(config.JWT_ISSUER ? { iss: config.JWT_ISSUER } : {}),
+    ...(config.JWT_AUDIENCE ? { aud: config.JWT_AUDIENCE } : {}),
+    iat,
+    exp,
+    jti,
+  };
 
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
@@ -175,6 +182,12 @@ function verifyToken(token, db = null, nowSeconds = Math.floor(Date.now() / 1000
     }
     if (nowSeconds >= payload.exp) {
       return null; // Hết hạn tại đúng mốc now >= exp (RFC 7519 Section 4.1.4)
+    }
+    if (config.JWT_ISSUER && payload.iss !== config.JWT_ISSUER) {
+      return null;
+    }
+    if (config.JWT_AUDIENCE && payload.aud !== config.JWT_AUDIENCE) {
+      return null;
     }
     return payload;
   } catch (_) {

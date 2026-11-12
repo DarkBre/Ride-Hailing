@@ -68,6 +68,12 @@ function verifyToken(token, nowSeconds = Math.floor(Date.now() / 1000)) {
     if (nowSeconds >= payload.exp) {
       return null;
     }
+    if (config.JWT_ISSUER && payload.iss !== config.JWT_ISSUER) {
+      return null;
+    }
+    if (config.JWT_AUDIENCE && payload.aud !== config.JWT_AUDIENCE) {
+      return null;
+    }
     const resolvedUserId = payload.userId || payload.user_id || payload.sub;
     if (!resolvedUserId || typeof resolvedUserId !== 'string' || !payload.role || typeof payload.role !== 'string') {
       return null;

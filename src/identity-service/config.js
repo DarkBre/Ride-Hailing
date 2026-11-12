@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 
-const PORT = Number(process.env.PORT || process.env.PORT_IDENTITY || 8001);
+const PORT = Number(process.env.IDENTITY_SERVICE_PORT || process.env.PORT || process.env.PORT_IDENTITY || 8001);
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'user_db.sqlite');
@@ -28,6 +28,8 @@ module.exports = {
   DB_PATH,
   JWT_SECRET,
   JWT_EXPIRES_IN: Number(process.env.JWT_EXPIRES_IN || 86400), // 24 giờ
+  JWT_ISSUER: process.env.JWT_ISSUER || '',
+  JWT_AUDIENCE: process.env.JWT_AUDIENCE || '',
   INTERNAL_KEY,
   NODE_ENV: process.env.NODE_ENV || 'development',
 };

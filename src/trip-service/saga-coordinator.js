@@ -100,7 +100,16 @@ class SagaCoordinator {
    * Xử lý sự kiện: trip.event.driver_matched
    * Matching Service đã lock tài xế thành công -> Trip chuyển sang DRIVER_ASSIGNED và yêu cầu giữ tiền
    */
-  handleDriverMatched({ eventId, tripId, driverId, fare, correlationId }) {
+  handleDriverMatched({
+    eventId,
+    tripId,
+    driverId,
+    driverUserId = null,
+    reservationId = null,
+    reservationExpiresAt = null,
+    fare,
+    correlationId,
+  }) {
     return this.db.tx(() => {
       if (this.isEventProcessed(eventId)) {
         return { duplicate: true, action: 'IGNORED' };
@@ -117,6 +126,7 @@ class SagaCoordinator {
       }
 
       const now = new Date().toISOString();
+      const resolvedDriverUserId = driverUserId || driverId || null;
 
       // 1. Nếu chuyến đi đã bị huỷ trước đó (khách huỷ / timeout / payment failed), phát lệnh giải phóng tài xế ngay lập tức
       if (trip.status === 'CANCELLED' || [SAGA_STATUS.COMPENSATING, SAGA_STATUS.COMPENSATED, SAGA_STATUS.FAILED].includes(saga.status)) {
@@ -128,6 +138,7 @@ class SagaCoordinator {
             payload: {
               trip_id: tripId,
               driver_id: driverId,
+              ...(reservationId ? { reservation_id: reservationId } : {}),
               reason: 'TRIP_ALREADY_CANCELLED_OR_FAILED',
             },
             correlationId: correlationId || saga.correlation_id,
@@ -155,6 +166,7 @@ class SagaCoordinator {
             payload: {
               trip_id: tripId,
               driver_id: driverId,
+              ...(reservationId ? { reservation_id: reservationId } : {}),
               reason: 'TRIP_ALREADY_DRIVER_ASSIGNED',
             },
             correlationId: correlationId || saga.correlation_id,
@@ -164,12 +176,15 @@ class SagaCoordinator {
         return { action: 'STALE_EVENT_DUPLICATE_MATCH_RELEASED', tripId };
       }
 
-      // 3. Luồng chuẩn: Cập nhật chuyến đi -> DRIVER_ASSIGNED, Saga -> HOLDING_PAYMENT, Outbox -> payment.event.hold_requested
+      // 3. Luồng chuẩn: Cập nhật chuyến đi -> DRIVER_ASSIGNED, lưu driver_user_id & reservation_id, Saga -> HOLDING_PAYMENT
       this.db.run(
         `UPDATE trips 
-         SET driver_id = ?, status = 'DRIVER_ASSIGNED', updated_at = ? 
+         SET driver_id = ?, driver_user_id = ?, reservation_id = ?, reservation_expires_at = ?, status = 'DRIVER_ASSIGNED', updated_at = ? 
          WHERE id = ?;`,
         driverId,
+        resolvedDriverUserId,
+        reservationId,
+        reservationExpiresAt,
         now,
         tripId
       );
@@ -191,6 +206,8 @@ class SagaCoordinator {
           trip_id: tripId,
           passenger_id: trip.passenger_id,
           driver_id: driverId,
+          ...(resolvedDriverUserId ? { driver_user_id: resolvedDriverUserId } : {}),
+          ...(reservationId ? { reservation_id: reservationId } : {}),
           amount: fare || trip.fare,
         },
         correlationId: correlationId || saga.correlation_id,
@@ -198,7 +215,13 @@ class SagaCoordinator {
 
       this.markEventProcessed(eventId, 'trip.event.driver_matched');
 
-      return { action: 'ADVANCED_TO_HOLDING_PAYMENT', tripId, driverId };
+      return {
+        action: 'ADVANCED_TO_HOLDING_PAYMENT',
+        tripId,
+        driverId,
+        driverUserId: resolvedDriverUserId,
+        reservationId,
+      };
     });
   }
 
@@ -305,7 +328,7 @@ class SagaCoordinator {
         throw new Error(`Không tìm thấy Saga cho chuyến đi ${tripId}`);
       }
 
-      const trip = this.db.get('SELECT id, driver_id, status FROM trips WHERE id = ?;', tripId);
+      const trip = this.db.get('SELECT id, driver_id, reservation_id, status FROM trips WHERE id = ?;', tripId);
       if (!trip) {
         throw new Error(`Không tìm thấy chuyến đi ${tripId}`);
       }
@@ -352,6 +375,7 @@ class SagaCoordinator {
           payload: {
             trip_id: tripId,
             driver_id: assignedDriverId,
+            ...(trip.reservation_id ? { reservation_id: trip.reservation_id } : {}),
             reason: 'SAGA_COMPENSATION_PAYMENT_FAILED',
           },
           correlationId: corrId,
@@ -419,6 +443,57 @@ class SagaCoordinator {
 
       return { action: 'MATCHING_FAILED_TRIP_CANCELLED', tripId };
     });
+  }
+
+  /**
+   * Điều phối chung một event envelope tới Saga (dùng chung cho cả RabbitMQ Consumer và Webhook /internal/events)
+   */
+  dispatchEvent(envelope) {
+    const { event_id, event_type, payload, correlation_id } = envelope || {};
+    if (!event_id || typeof event_id !== 'string' || !event_type || !payload || typeof payload !== 'object') {
+      throw new Error('Event envelope bắt buộc phải có event_id, event_type và payload');
+    }
+
+    switch (event_type) {
+      case 'trip.event.driver_matched':
+        return this.handleDriverMatched({
+          eventId: event_id,
+          tripId: payload.trip_id,
+          driverId: payload.driver_id,
+          driverUserId: payload.driver_user_id,
+          reservationId: payload.reservation_id,
+          reservationExpiresAt: payload.expires_at,
+          fare: payload.estimated_fare,
+          correlationId: correlation_id,
+        });
+
+      case 'payment.event.hold_success':
+        return this.handlePaymentHoldSuccess({
+          eventId: event_id,
+          tripId: payload.trip_id,
+          correlationId: correlation_id,
+        });
+
+      case 'payment.event.hold_failed':
+        return this.handlePaymentHoldFailed({
+          eventId: event_id,
+          tripId: payload.trip_id,
+          driverId: payload.driver_id,
+          reason: payload.reason,
+          correlationId: correlation_id,
+        });
+
+      case 'trip.event.matching_failed':
+        return this.handleMatchingFailed({
+          eventId: event_id,
+          tripId: payload.trip_id,
+          reason: payload.reason,
+          correlationId: correlation_id,
+        });
+
+      default:
+        return { action: 'UNKNOWN_EVENT_IGNORED', event_type };
+    }
   }
 
   /**
