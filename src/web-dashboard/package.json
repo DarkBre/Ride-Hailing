@@ -1,0 +1,13 @@
+{
+  "name": "web-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DS03 Web Simulation Dashboard with Leaflet Map, Dual Rider/Driver Views and Live Tracing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
