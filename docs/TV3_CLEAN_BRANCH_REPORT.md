@@ -2,6 +2,7 @@
 
 **Nhánh:** `feature/tv3-payment-gateway-clean`  
 **Base:** `origin/main` (`eef9446`)  
+**Commit code:** `512a491`  
 **Ngày kiểm chứng:** 2026-11-12  
 **Phạm vi:** Chỉ các thành phần TV3. Không sửa `src/identity-service/`, `src/trip-service/`, `src/driver-service/`, `src/matching-service/`.
 
