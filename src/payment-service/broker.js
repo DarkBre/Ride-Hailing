@@ -24,39 +24,130 @@ class PaymentBroker {
     this.connection = null;
     this.channel = null;
     this.consumerTag = null;
+    this.messageHandler = null;
     this.isStopping = false;
     this.inFlightMessages = new Set();
+    this.returnedMessages = new Set();
+    this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    this.reconnectDelayBaseMs = options.reconnectDelayBaseMs || 1000;
+    this.reconnectDelayMaxMs = options.reconnectDelayMaxMs || 30000;
+    this.isReconnecting = false;
   }
 
   isReady() {
-    return Boolean(this.channel && !this.isStopping);
+    return Boolean(this.channel && !this.isStopping && !this.isReconnecting);
   }
 
-  async connect() {
-    this.isStopping = false;
-    this.connection = await amqp.connect(this.url, { timeout: 5000 });
-    this.connection.on('error', (err) => {
-      console.error(`[${new Date().toISOString()}] [payment-service] [ERROR] RabbitMQ connection error:`, err.message);
-    });
-    this.connection.on('close', () => {
-      if (!this.isStopping) {
-        console.warn(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ connection closed. Channel invalidated.`);
-        this.channel = null;
-      }
-    });
-
-    const ch = await this.connection.createConfirmChannel();
-    this.channel = ch;
+  _wireChannel(ch) {
     ch.on('error', (err) => {
       console.error(`[${new Date().toISOString()}] [payment-service] [ERROR] RabbitMQ channel error:`, err.message);
     });
+    ch.on('return', (message) => {
+      const messageId = message?.properties?.messageId;
+      if (messageId) this.returnedMessages.add(messageId);
+    });
     ch.on('close', () => {
-      this.channel = null;
+      if (this.channel === ch) this.channel = null;
+      this.consumerTag = null;
+      this.returnedMessages.clear();
+      if (!this.isStopping) this.scheduleReconnect();
+    });
+  }
+
+  async connect() {
+    if (this.isStopping) throw new Error('RabbitMQ broker is stopping');
+    const connection = await amqp.connect(this.url, { timeout: 5000 });
+    this.connection = connection;
+    connection.on('error', (err) => {
+      console.error(`[${new Date().toISOString()}] [payment-service] [ERROR] RabbitMQ connection error:`, err.message);
+    });
+    connection.on('close', () => {
+      if (this.channel) {
+        this.channel = null;
+      }
+      this.consumerTag = null;
+      this.returnedMessages.clear();
+      if (!this.isStopping) {
+        console.warn(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ connection closed. Scheduling reconnect.`);
+        this.scheduleReconnect();
+      }
     });
 
-    await this.setupTopology();
-    await ch.prefetch(this.prefetch);
-    return this;
+    try {
+      const ch = await connection.createConfirmChannel();
+      this.channel = ch;
+      this._wireChannel(ch);
+
+      await this.setupTopology();
+      await ch.prefetch(this.prefetch);
+      await this.cleanupLegacyBindings();
+      this.reconnectAttempts = 0;
+      return this;
+    } catch (err) {
+      this.channel = null;
+      this.consumerTag = null;
+      try {
+        await connection.close();
+      } catch (_) {}
+      this.connection = null;
+      throw err;
+    }
+  }
+
+  /**
+   * Remove legacy bindings on a throwaway channel so a missing binding cannot kill
+   * the main consumer channel.
+   */
+  async cleanupLegacyBindings() {
+    if (!this.connection) return;
+    let cleanupChannel;
+    try {
+      cleanupChannel = await this.connection.createChannel();
+      for (const legacyKey of ['trip.event.release_driver', 'trip.event.driver_matched']) {
+        try {
+          await cleanupChannel.unbindQueue(this.queue, this.exchange, legacyKey);
+        } catch (_) {
+          // A 404 closes only the throwaway channel; the main channel stays intact.
+        }
+      }
+    } catch (_) {
+      // Cleanup is best-effort and must never block startup.
+    } finally {
+      if (cleanupChannel) {
+        try {
+          await cleanupChannel.close();
+        } catch (_) {}
+      }
+    }
+  }
+
+  scheduleReconnect() {
+    if (this.isStopping || this.reconnectTimer || this.isReconnecting) return;
+    const attempt = this.reconnectAttempts;
+    const base = Math.min(this.reconnectDelayMaxMs, this.reconnectDelayBaseMs * (2 ** Math.min(attempt, 5)));
+    const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(base * 0.2)));
+    const delay = Math.min(this.reconnectDelayMaxMs, base + jitter);
+    this.reconnectAttempts += 1;
+
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      if (this.isStopping) return;
+      this.isReconnecting = true;
+      try {
+        await this.connect();
+        if (this.messageHandler) {
+          await this.startConsumer(this.messageHandler);
+        }
+        this.isReconnecting = false;
+        console.log(`[${new Date().toISOString()}] [payment-service] [INFO] RabbitMQ reconnected`);
+      } catch (err) {
+        this.isReconnecting = false;
+        console.warn(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ reconnect failed: ${err.message}`);
+        this.scheduleReconnect();
+      }
+    }, delay);
+    if (this.reconnectTimer.unref) this.reconnectTimer.unref();
   }
 
   async setupTopology() {
@@ -85,13 +176,7 @@ class PaymentBroker {
       await ch.bindQueue(this.queue, this.exchange, key);
     }
 
-    // Dọn binding cũ còn sót trong volume RabbitMQ từ contract trước đây.
-    // Payment không được refund vì trip.event.release_driver, và không hold sớm vì driver_matched.
-    for (const legacyKey of ['trip.event.release_driver', 'trip.event.driver_matched']) {
-      try {
-        await ch.unbindQueue(this.queue, this.exchange, legacyKey);
-      } catch (_) {}
-    }
+    // Legacy binding cleanup happens on a throwaway channel in cleanupLegacyBindings().
 
     // 5. Declare Retry Delay Queues for Bounded Retries with Exponential Backoff
     for (const key of PAYMENT_SUBSCRIPTIONS) {
@@ -108,47 +193,71 @@ class PaymentBroker {
   }
 
   /**
-   * Publish an event to the main exchange with Publisher Confirmation
+   * Publish an event with Publisher Confirmation and mandatory-route verification.
+   * A basic.return (unroutable message) must not be reported as success.
    */
   async publish(envelope) {
-    if (!this.channel) {
+    const channel = this.channel;
+    if (!channel) {
       throw new Error('RabbitMQ channel not ready to publish');
     }
 
     const payloadBuffer = Buffer.from(JSON.stringify(envelope));
     const routingKey = envelope.event_type;
-    const messageId = envelope.event_id || crypto.randomUUID();
+    const messageId = crypto.randomUUID();
+    const eventId = envelope.event_id || messageId;
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (err, result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.returnedMessages.delete(messageId);
+        if (err) reject(err);
+        else resolve(result);
+      };
+
       const timer = setTimeout(() => {
-        reject(new Error(`RabbitMQ publisher confirmation timeout for event ${messageId}`));
+        finish(new Error(`RabbitMQ publisher confirmation timeout for event ${eventId}`));
       }, 5000);
 
-      this.channel.publish(
-        this.exchange,
-        routingKey,
-        payloadBuffer,
-        {
-          messageId,
-          correlationId: envelope.correlation_id,
-          contentType: 'application/json',
-          persistent: true,
-          mandatory: true,
-          timestamp: Date.now(),
-          headers: {
-            'x-source-service': config.SERVICE_NAME,
-            'x-correlation-id': envelope.correlation_id || '',
+      try {
+        channel.publish(
+          this.exchange,
+          routingKey,
+          payloadBuffer,
+          {
+            messageId,
+            correlationId: envelope.correlation_id,
+            contentType: 'application/json',
+            persistent: true,
+            mandatory: true,
+            timestamp: Date.now(),
+            headers: {
+              'x-source-service': config.SERVICE_NAME,
+              'x-correlation-id': envelope.correlation_id || '',
+              'x-event-id': eventId,
+            },
           },
-        },
-        (err) => {
-          clearTimeout(timer);
-          if (err) {
-            reject(err);
-          } else {
-            resolve({ published: true, messageId });
+          (err) => {
+            if (err) {
+              finish(err);
+              return;
+            }
+            // Give amqplib a turn to emit the basic.return frame before declaring success.
+            setImmediate(() => {
+              if (this.returnedMessages.delete(messageId)) {
+                finish(new Error(`RabbitMQ message ${eventId} was unroutable (basic.return)`));
+              } else {
+                finish(null, { published: true, messageId, eventId });
+              }
+            });
           }
-        }
-      );
+        );
+      } catch (err) {
+        finish(err);
+      }
     });
   }
 
@@ -156,6 +265,7 @@ class PaymentBroker {
    * Start consuming messages from payment.queue with Bounded Retries and DLQ
    */
   async startConsumer(messageHandler) {
+    this.messageHandler = messageHandler;
     if (!this.channel) throw new Error('RabbitMQ channel not ready to consume');
 
     const ch = this.channel;
@@ -163,7 +273,13 @@ class PaymentBroker {
     const consumerResult = await ch.consume(this.queue, async (msg) => {
       if (!msg) return;
 
-      const promise = this._processIncomingMessage(msg, messageHandler);
+      const promise = this._processIncomingMessage(msg, messageHandler)
+        .catch((err) => {
+          console.error(
+            `[${new Date().toISOString()}] [payment-service] [ERROR] Consumer promise rejected:`,
+            err.message
+          );
+        });
       this.inFlightMessages.add(promise);
       try {
         await promise;
@@ -180,6 +296,13 @@ class PaymentBroker {
     const ch = this.channel;
     if (!ch) return;
 
+    const safeAck = () => {
+      try { ch.ack(msg); } catch (_) {}
+    };
+    const safeNack = (requeue = false) => {
+      try { ch.nack(msg, false, requeue); } catch (_) {}
+    };
+
     let envelope;
     try {
       if (msg.content.length > 65536) {
@@ -195,9 +318,7 @@ class PaymentBroker {
         parseErr.message
       );
       // Poison message -> reject without requeue, moving it straight to DLQ
-      try {
-        ch.nack(msg, false, false);
-      } catch (_) {}
+      safeNack(false);
       return;
     }
 
@@ -213,7 +334,7 @@ class PaymentBroker {
       await messageHandler(envelope);
 
       // Acknowledge successfully processed message
-      ch.ack(msg);
+      safeAck();
       console.log(
         `[${new Date().toISOString()}] [${corrId}] [payment-service] [INFO] Event handled successfully: ${envelope.event_type}`
       );
@@ -247,7 +368,7 @@ class PaymentBroker {
           });
 
           // Acknowledge original message from main queue since it is parked safely in retry queue
-          ch.ack(msg);
+          safeAck();
           console.log(
             `[${new Date().toISOString()}] [${corrId}] [payment-service] [INFO] Message scheduled in retry queue (${retryQueueName}, delay ${delay}ms)`
           );
@@ -256,20 +377,25 @@ class PaymentBroker {
             `[${new Date().toISOString()}] [${corrId}] [payment-service] [ERROR] Failed to route to retry queue, nacking to DLQ:`,
             publishErr.message
           );
-          ch.nack(msg, false, false);
+          safeNack(false);
         }
       } else {
         // Exceeded bounded retries -> Route directly to DLQ
         console.error(
           `[${new Date().toISOString()}] [${corrId}] [payment-service] [ERROR] Max retries (${this.maxRetries}) exceeded for event ${envelope.event_id}. Moving to DLQ.`
         );
-        ch.nack(msg, false, false);
+        safeNack(false);
       }
     }
   }
 
   async close() {
     this.isStopping = true;
+    this.isReconnecting = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.channel && this.consumerTag) {
       try {
         await this.channel.cancel(this.consumerTag);
@@ -277,7 +403,10 @@ class PaymentBroker {
     }
 
     if (this.inFlightMessages.size > 0) {
-      await Promise.allSettled(Array.from(this.inFlightMessages));
+      await Promise.race([
+        Promise.allSettled(Array.from(this.inFlightMessages)),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
     }
 
     if (this.channel) {

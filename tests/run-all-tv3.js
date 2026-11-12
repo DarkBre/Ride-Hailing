@@ -11,7 +11,11 @@ const path = require('node:path');
 
 const testFiles = [
   'ft-07-payment.test.js',
+  'payment-state-machine.test.js',
+  'outbox-reliability.test.js',
+  'broker-lifecycle.test.js',
   'payment-auth.test.js',
+  'payment-config.test.js',
   'fr-01-fr-02-fault-saga.test.js',
   'dlq-retry.test.js',
   'notification.test.js',

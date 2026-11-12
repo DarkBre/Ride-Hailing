@@ -1,5 +1,8 @@
 # TV3 CLEAN BRANCH REPORT — PAYMENT, NOTIFICATION, GATEWAY & DASHBOARD
 
+> **Lịch sử:** Báo cáo này mô tả nhánh sạch ban đầu. Các lỗi critical/high đã được sửa trên
+> `feature/tv3-critical-fixes`; xem `docs/TV3_CRITICAL_FIXES_REPORT.md` cho kết quả mới nhất.
+
 **Nhánh:** `feature/tv3-payment-gateway-clean`  
 **Base:** `origin/main` (`eef9446`)  
 **Commit code:** `512a491`  

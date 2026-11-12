@@ -91,7 +91,9 @@ function audiencesFor(eventType, payload) {
 class NotificationStore {
   constructor(options = {}) {
     this.maxNotifications = options.maxNotifications || MAX_NOTIFICATIONS;
+    this.maxProcessed = options.maxProcessed || 10000;
     this.processed = new Set();
+    this.processedOrder = [];
     this.notifications = [];
   }
 
@@ -122,6 +124,11 @@ class NotificationStore {
       return { duplicate: true, notifications: [] };
     }
     this.processed.add(event_id);
+    this.processedOrder.push(event_id);
+    while (this.processed.size > this.maxProcessed) {
+      const oldest = this.processedOrder.shift();
+      if (oldest) this.processed.delete(oldest);
+    }
 
     const created = [];
     for (const target of audiencesFor(event_type, payload)) {
@@ -151,9 +158,16 @@ class NotificationStore {
     return { duplicate: false, notifications: created };
   }
 
-  list(limit = 100) {
+  list(limit = 100, userId = null) {
     const size = Math.max(1, Math.min(Number(limit) || 100, this.maxNotifications));
-    return this.notifications.slice(0, size);
+    const source = userId
+      ? this.notifications.filter((item) => item.user_id === userId)
+      : this.notifications;
+    return source.slice(0, size);
+  }
+
+  listForUser(userId, limit = 100) {
+    return this.list(limit, userId);
   }
 }
 

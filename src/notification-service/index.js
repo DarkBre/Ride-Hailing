@@ -4,20 +4,17 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const amqp = require('amqplib');
 const { NotificationStore } = require('./notification-logic');
+const config = require('./config');
+const { authenticateRequest } = require('./auth');
 
-const SERVICE_NAME = 'notification-service';
-const PORT = Number(process.env.NOTIFICATION_SERVICE_PORT || process.env.PORT || 8006);
-const RABBITMQ = {
-  url: process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
-  exchange: process.env.RABBITMQ_EXCHANGE || 'trip.exchange',
-  dlx: process.env.RABBITMQ_DLX || 'trip.dlx',
-  dlq: process.env.RABBITMQ_DLQ || 'trip.dlq',
-  queue: process.env.NOTIFICATION_QUEUE || 'notification.queue',
-  prefetch: Number(process.env.RABBITMQ_PREFETCH || 10),
-};
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:8080';
+const SERVICE_NAME = config.SERVICE_NAME;
+const PORT = config.PORT;
+const RABBITMQ = config.RABBITMQ;
+const GATEWAY_URL = config.GATEWAY_URL;
 const RETRY_DELAYS = [1000, 2000, 4000];
 const MAX_RETRIES = 3;
+const RECONNECT_BASE_MS = config.RECONNECT_BASE_MS;
+const RECONNECT_MAX_MS = config.RECONNECT_MAX_MS;
 
 const store = new NotificationStore();
 let brokerReady = false;
@@ -26,6 +23,9 @@ let connection = null;
 let consumerTag = null;
 let stopping = false;
 let reconnectTimer = null;
+let reconnectAttempts = 0;
+let isReconnecting = false;
+const inFlightMessages = new Set();
 
 function log(level, event, meta = {}) {
   const entry = { timestamp: new Date().toISOString(), level, service: SERVICE_NAME, event, ...meta };
@@ -59,6 +59,7 @@ async function broadcast(notification) {
         headers: {
           'content-type': 'application/json',
           'x-correlation-id': notification.correlation_id || '',
+          'x-internal-key': config.INTERNAL_KEY,
         },
         body,
         signal: controller.signal,
@@ -116,8 +117,8 @@ async function ensureRetryQueue(ch, eventType, delay) {
   return queue;
 }
 
-async function processMessage(msg) {
-  if (!msg || !channel) return;
+async function processMessage(msg, ch) {
+  if (!msg || !ch) return;
 
   let envelope;
   try {
@@ -128,7 +129,7 @@ async function processMessage(msg) {
     }
   } catch (err) {
     log('error', 'poison_message_rejected', { reason: err.message });
-    channel.nack(msg, false, false);
+    try { ch.nack(msg, false, false); } catch (_) {}
     return;
   }
 
@@ -137,7 +138,7 @@ async function processMessage(msg) {
 
   try {
     await handleEnvelope(envelope);
-    channel.ack(msg);
+    ch.ack(msg);
   } catch (err) {
     if (retries >= MAX_RETRIES) {
       log('error', 'notification_dlq', {
@@ -146,14 +147,14 @@ async function processMessage(msg) {
         correlation_id: correlationId,
         reason: err.message,
       });
-      channel.nack(msg, false, false);
+      try { ch.nack(msg, false, false); } catch (_) {}
       return;
     }
 
     const delay = RETRY_DELAYS[Math.min(retries, RETRY_DELAYS.length - 1)];
     try {
-      const queue = await ensureRetryQueue(channel, envelope.event_type, delay);
-      channel.sendToQueue(
+      const queue = await ensureRetryQueue(ch, envelope.event_type, delay);
+      ch.sendToQueue(
         queue,
         msg.content,
         {
@@ -168,61 +169,92 @@ async function processMessage(msg) {
           },
         },
         (publishErr) => {
-          if (publishErr) {
-            channel.nack(msg, false, false);
-          } else {
-            channel.ack(msg);
-          }
+          try {
+            if (publishErr) ch.nack(msg, false, false);
+            else ch.ack(msg);
+          } catch (_) {}
         }
       );
     } catch (_) {
-      channel.nack(msg, false, false);
+      try { ch.nack(msg, false, false); } catch (_) {}
     }
   }
 }
 
+function scheduleReconnect() {
+  if (stopping || reconnectTimer || isReconnecting) return;
+  const base = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * (2 ** Math.min(reconnectAttempts, 5)));
+  const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(base * 0.2)));
+  const delay = Math.min(RECONNECT_MAX_MS, base + jitter);
+  reconnectAttempts += 1;
+
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    if (stopping) return;
+    isReconnecting = true;
+    try {
+      await connectBroker();
+      isReconnecting = false;
+      log('info', 'reconnected');
+    } catch (err) {
+      isReconnecting = false;
+      log('warn', 'reconnect_failed', { reason: err.message });
+      scheduleReconnect();
+    }
+  }, delay);
+  if (reconnectTimer.unref) reconnectTimer.unref();
+}
+
 async function connectBroker() {
-  stopping = false;
-  connection = await amqp.connect(RABBITMQ.url, { timeout: 5000 });
-  connection.on('error', (err) => log('error', 'rabbitmq_connection_error', { reason: err.message }));
-  connection.on('close', () => {
+  if (stopping) throw new Error('Notification broker is stopping');
+
+  const conn = await amqp.connect(RABBITMQ.url, { timeout: 5000 });
+  connection = conn;
+  conn.on('error', (err) => log('error', 'rabbitmq_connection_error', { reason: err.message }));
+  conn.on('close', () => {
     brokerReady = false;
     channel = null;
     consumerTag = null;
     if (!stopping) scheduleReconnect();
   });
 
-  channel = await connection.createConfirmChannel();
-  channel.on('error', (err) => log('error', 'rabbitmq_channel_error', { reason: err.message }));
-  channel.on('close', () => {
+  let ch = null;
+  try {
+    ch = await conn.createConfirmChannel();
+    channel = ch;
+    ch.on('error', (err) => log('error', 'rabbitmq_channel_error', { reason: err.message }));
+    ch.on('close', () => {
+      if (channel === ch) channel = null;
+      brokerReady = false;
+      consumerTag = null;
+      if (!stopping) scheduleReconnect();
+    });
+
+    await setupTopology(ch);
+    await ch.prefetch(RABBITMQ.prefetch);
+    const consumer = await ch.consume(RABBITMQ.queue, (msg) => {
+      if (!msg) return;
+      const promise = processMessage(msg, ch).catch((err) => {
+        log('error', 'notification_handler_crash', { reason: err.message });
+      });
+      inFlightMessages.add(promise);
+      promise.finally(() => inFlightMessages.delete(promise));
+    });
+    consumerTag = consumer.consumerTag;
+    brokerReady = true;
+    reconnectAttempts = 0;
+    log('info', 'consumer_started', { queue: RABBITMQ.queue });
+  } catch (err) {
     brokerReady = false;
-    channel = null;
-  });
-
-  await setupTopology(channel);
-  await channel.prefetch(RABBITMQ.prefetch);
-  const consumer = await channel.consume(RABBITMQ.queue, (msg) => {
-    if (!msg) return;
-    processMessage(msg).catch((err) => log('error', 'notification_handler_crash', { reason: err.message }));
-  });
-  consumerTag = consumer.consumerTag;
-  brokerReady = true;
-  log('info', 'consumer_started', { queue: RABBITMQ.queue });
-}
-
-function scheduleReconnect() {
-  if (stopping || reconnectTimer) return;
-  reconnectTimer = setTimeout(async () => {
-    reconnectTimer = null;
-    try {
-      await connectBroker();
-      log('info', 'reconnected');
-    } catch (err) {
-      log('warn', 'reconnect_failed', { reason: err.message });
-      scheduleReconnect();
+    if (channel === ch) channel = null;
+    consumerTag = null;
+    if (ch) {
+      try { await ch.close(); } catch (_) {}
     }
-  }, 2000);
-  if (reconnectTimer.unref) reconnectTimer.unref();
+    try { await conn.close(); } catch (_) {}
+    connection = null;
+    throw err;
+  }
 }
 
 function sendJson(res, status, data, error = null, correlationId = '') {
@@ -254,8 +286,21 @@ function createNotificationServer() {
       return sendJson(res, 200, { ready: true }, null, correlationId);
     }
     if (req.method === 'GET' && url.pathname === '/notifications') {
+      const auth = authenticateRequest(req, url);
+      if (!auth) {
+        return sendJson(
+          res,
+          401,
+          null,
+          { code: 'UNAUTHORIZED', message: 'A valid JWT or internal service key is required' },
+          correlationId
+        );
+      }
       const limit = url.searchParams.get('limit');
-      return sendJson(res, 200, store.list(limit), null, correlationId);
+      const notifications = auth.internal
+        ? store.list(limit, auth.userId)
+        : store.listForUser(auth.userId, limit);
+      return sendJson(res, 200, notifications, null, correlationId);
     }
 
     return sendJson(
@@ -283,11 +328,18 @@ async function start() {
     if (stopping) return;
     stopping = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
     try {
       if (channel && consumerTag) await channel.cancel(consumerTag);
       if (channel) await channel.close();
       if (connection) await connection.close();
     } catch (_) {}
+    if (inFlightMessages.size > 0) {
+      await Promise.race([
+        Promise.allSettled(Array.from(inFlightMessages)),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
     server.close(() => process.exit(0));
   };
 
@@ -308,4 +360,19 @@ module.exports = {
   start,
   handleEnvelope,
   store,
+  __test: {
+    connectBroker,
+    scheduleReconnect,
+    processMessage,
+    state: () => ({
+      brokerReady,
+      channel,
+      connection,
+      consumerTag,
+      stopping,
+      reconnectAttempts,
+      isReconnecting,
+      inFlightSize: inFlightMessages.size,
+    }),
+  },
 };

@@ -53,8 +53,20 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     locked_by VARCHAR(100) NULL,
     locked_at TIMESTAMP WITH TIME ZONE NULL,
     lease_expires_at TIMESTAMP WITH TIME ZONE NULL,
+    next_attempt_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_error TEXT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     published_at TIMESTAMP WITH TIME ZONE NULL
+);
+
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS last_error TEXT NULL;
+
+-- Captures that arrived before their hold. Reconciled inside the hold transaction.
+CREATE TABLE IF NOT EXISTS pending_captures (
+    trip_id UUID PRIMARY KEY,
+    correlation_id VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Idempotency and Event Deduplication Table
@@ -66,4 +78,5 @@ CREATE TABLE IF NOT EXISTS processed_events (
 
 CREATE INDEX IF NOT EXISTS idx_wallets_user_id ON wallets(user_id);
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, created_at) WHERE status IN ('PENDING', 'PUBLISHING');
+CREATE INDEX IF NOT EXISTS idx_outbox_retry ON outbox_events(status, next_attempt_at) WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_outbox_lease ON outbox_events(lease_expires_at) WHERE status = 'PUBLISHING';
