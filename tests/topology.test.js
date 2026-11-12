@@ -1,5 +1,6 @@
 'use strict';
 
+require('./test-env');
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');

@@ -1,9 +1,31 @@
 'use strict';
 
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PRODUCTION = NODE_ENV === 'production';
+const DEV_JWT_SECRET = 'dev-jwt-secret-key-ds03-2026';
+const DEV_INTERNAL_KEY = 'dev-internal-service-key-ds03';
+const KNOWN_DEV_JWT_SECRETS = new Set([DEV_JWT_SECRET, 'super-secret-jwt-key-distributed-systems-2026']);
+const KNOWN_DEV_INTERNAL_KEYS = new Set([DEV_INTERNAL_KEY, 'ds03-internal-secret-dev']);
+
+function selectSecret(name, fallback, knownDevValues) {
+  const value = process.env[name];
+  if (IS_PRODUCTION) {
+    if (!value || value.length < 16 || knownDevValues.has(value)) {
+      throw new Error(`FATAL: ${name} must be a non-default secret of at least 16 characters in production`);
+    }
+    return value;
+  }
+  return value || fallback;
+}
+
+const JWT_SECRET = selectSecret('JWT_SECRET', DEV_JWT_SECRET, KNOWN_DEV_JWT_SECRETS);
+const INTERNAL_KEY = selectSecret('INTERNAL_KEY', DEV_INTERNAL_KEY, KNOWN_DEV_INTERNAL_KEYS);
+
 module.exports = {
   SERVICE_NAME: 'payment-service',
   PORT: Number(process.env.PAYMENT_SERVICE_PORT || process.env.PORT || 8005),
-  NODE_ENV: process.env.NODE_ENV || 'development',
+  NODE_ENV,
+  IS_PRODUCTION,
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
 
   POSTGRES: {
@@ -30,8 +52,8 @@ module.exports = {
   },
 
   IDENTITY_URL: process.env.IDENTITY_URL || process.env.URL_IDENTITY || 'http://localhost:8001',
-  INTERNAL_KEY: process.env.INTERNAL_KEY || 'dev-internal-service-key-ds03',
-  JWT_SECRET: process.env.JWT_SECRET || 'dev-jwt-secret-key-ds03-2026',
+  INTERNAL_KEY,
+  JWT_SECRET,
   JWT_ISSUER: process.env.JWT_ISSUER || '',
   JWT_AUDIENCE: process.env.JWT_AUDIENCE || '',
   IDENTITY_TIMEOUT_MS: Number(process.env.IDENTITY_TIMEOUT_MS || 2000),

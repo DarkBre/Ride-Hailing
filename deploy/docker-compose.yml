@@ -12,13 +12,6 @@ x-app-common: &app-common
     - ds03-network
   restart: unless-stopped
 
-x-default-secrets: &default-secrets
-  JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
-  INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
-  DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-ds03-driver-internal-secret-dev}
-  DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY:-ds03-driver-trip-secret-dev}
-  MATCHING_INTERNAL_KEY: ${MATCHING_INTERNAL_KEY:-ds03-matching-internal-secret-dev}
-
 services:
   # ============================================================================
   # 1. INFRASTRUCTURE SERVICES (Owned by TV3)
@@ -74,7 +67,9 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-payment
     environment:
-      <<: *default-secrets
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
+      INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
       PORT: 8005
       PAYMENT_SERVICE_PORT: 8005
       POSTGRES_HOST: postgres
@@ -97,7 +92,7 @@ services:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8005/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8005/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   notification:
     <<: *app-common
@@ -106,6 +101,9 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-notification
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
+      INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
       PORT: 8006
       NOTIFICATION_SERVICE_PORT: 8006
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
@@ -120,10 +118,10 @@ services:
       rabbitmq:
         condition: service_healthy
       gateway:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8006/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8006/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   gateway:
     <<: *app-common
@@ -132,6 +130,7 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-gateway
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 8080
       GATEWAY_PORT: 8080
       IDENTITY_URL: http://identity:8001
@@ -141,6 +140,7 @@ services:
       PAYMENT_URL: http://payment:8005
       NOTIFICATION_URL: http://notification:8006
       DASHBOARD_URL: http://dashboard:3000
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
       INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
       DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-ds03-driver-internal-secret-dev}
     ports:
@@ -150,7 +150,7 @@ services:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   dashboard:
     <<: *app-common
@@ -168,7 +168,7 @@ services:
         condition: service_healthy
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   # ============================================================================
   # 3. TV1 & TV2 SERVICES (lấy từ nhánh tương ứng khi hợp nhất)
@@ -180,7 +180,8 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-identity
     environment:
-      <<: *default-secrets
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
+      INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
       PORT: 8001
       IDENTITY_SERVICE_PORT: 8001
       IDENTITY_DB_NAME: ${IDENTITY_DB_NAME:-user_db}
@@ -195,7 +196,7 @@ services:
       - full
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8001/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8001/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   driver:
     <<: *app-common
@@ -204,7 +205,9 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-driver
     environment:
-      <<: *default-secrets
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-ds03-driver-internal-secret-dev}
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY:-ds03-driver-trip-secret-dev}
       PORT: 8002
       DRIVER_SERVICE_PORT: 8002
       DRIVER_DB_NAME: ${DRIVER_DB_NAME:-driver_db}
@@ -224,7 +227,7 @@ services:
       - full
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8002/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8002/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   matching:
     <<: *app-common
@@ -233,7 +236,9 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-matching
     environment:
-      <<: *default-secrets
+      MATCHING_INTERNAL_KEY: ${MATCHING_INTERNAL_KEY:-ds03-matching-internal-secret-dev}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-ds03-driver-internal-secret-dev}
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY:-ds03-driver-trip-secret-dev}
       PORT: 8004
       MATCHING_SERVICE_PORT: 8004
       MATCHING_DB_NAME: ${MATCHING_DB_NAME:-match_db}
@@ -256,12 +261,12 @@ services:
       rabbitmq:
         condition: service_healthy
       driver:
-        condition: service_started
+        condition: service_healthy
     profiles:
       - full
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8004/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8004/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
   trip:
     <<: *app-common
@@ -270,7 +275,10 @@ services:
       dockerfile: Dockerfile
     container_name: ds03-trip
     environment:
-      <<: *default-secrets
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-distributed-systems-2026}
+      INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
+      DRIVER_INTERNAL_KEY: ${DRIVER_INTERNAL_KEY:-ds03-driver-internal-secret-dev}
+      DRIVER_TRIP_KEY: ${DRIVER_TRIP_KEY:-ds03-driver-trip-secret-dev}
       PORT: 8003
       TRIP_SERVICE_PORT: 8003
       TRIP_DB_NAME: ${TRIP_DB_NAME:-trip_db}
@@ -300,7 +308,7 @@ services:
       - full
     healthcheck:
       <<: *healthcheck-common
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8003/live').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8003/ready').then(r=>process.exit(+!r.ok)).catch(()=>process.exit(1))"]
 
 networks:
   ds03-network:

@@ -1,5 +1,6 @@
 'use strict';
 
+require('./test-env');
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('node:crypto');
@@ -82,6 +83,24 @@ test('Payment rejects a locally valid token revoked by Identity (blacklist)', as
     identityLookup: async () => ({ status: 'invalid', user: null }),
   });
   assert.strictEqual(revoked, null);
+});
+
+test('Payment does not fall back to local JWT when Identity returns 401/403', async () => {
+  const tokenA = signToken(futurePayload(USER_A));
+  const req = { headers: { authorization: `Bearer ${tokenA}` } };
+  const rejected = await resolveRequestUser(req, {
+    identityLookup: async () => ({ status: 'rejected', user: null }),
+  });
+  assert.strictEqual(rejected, null);
+});
+
+test('Payment falls back to local JWT only when Identity is unavailable', async () => {
+  const tokenA = signToken(futurePayload(USER_A));
+  const req = { headers: { authorization: `Bearer ${tokenA}` } };
+  const fallback = await resolveRequestUser(req, {
+    identityLookup: async () => ({ status: 'unavailable', user: null }),
+  });
+  assert.strictEqual(fallback.id, USER_A);
 });
 
 test('Payment HTTP endpoints enforce 401/403 before touching the wallet DB', async (t) => {

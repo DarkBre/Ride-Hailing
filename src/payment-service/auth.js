@@ -83,7 +83,10 @@ function extractBearer(req) {
 
 /**
  * Gọi Identity Service để tôn trọng token blacklist (logout).
- * Trả về { status: 'valid'|'invalid'|'unavailable', user }.
+ * Trả về { status: 'valid'|'invalid'|'rejected'|'unavailable', user }.
+ * - invalid: Identity trả 200 nhưng token/user không hợp lệ.
+ * - rejected: Identity trả 401/403; tuyệt đối không fallback sang verify cục bộ.
+ * - unavailable: lỗi mạng/5xx; được phép fallback cục bộ theo trade-off đã ghi nhận.
  */
 async function lookupIdentity(token, correlationId = '') {
   try {
@@ -100,7 +103,8 @@ async function lookupIdentity(token, correlationId = '') {
     });
 
     if (response.status === 401 || response.status === 403) {
-      return { status: 'unavailable', user: null };
+      // Identity explicitly rejected the request/token. Do not bypass with local JWT parsing.
+      return { status: 'rejected', user: null };
     }
     if (!response.ok) {
       return { status: 'unavailable', user: null };
@@ -125,8 +129,13 @@ async function lookupIdentity(token, correlationId = '') {
 }
 
 /**
- * Xác thực request người dùng. Ưu tiên Identity Service để kiểm tra blacklist;
- * nếu Identity không sẵn sàng thì fallback xác thực chữ ký HS256 + exp cục bộ.
+ * Xác thực request người dùng. Ưu tiên Identity Service để kiểm tra blacklist.
+ * Chỉ fallback xác thực HS256 + exp cục bộ khi Identity thực sự không sẵn sàng
+ * (lỗi mạng/5xx). Nếu Identity trả 401/403 hoặc token không hợp lệ, từ chối.
+ *
+ * Security trade-off: khi Identity unavailable, local fallback không thể kiểm tra
+ * blacklist logout. Hệ thống chấp nhận cửa sổ rủi ro này để Payment vẫn hoạt động;
+ * cần giám sát/khôi phục Identity nhanh và không dùng fallback cho 401/403.
  */
 async function resolveRequestUser(req, deps = {}) {
   const token = extractBearer(req);
@@ -138,7 +147,7 @@ async function resolveRequestUser(req, deps = {}) {
   const identityLookup = deps.identityLookup || lookupIdentity;
   const identity = await identityLookup(token, req.headers?.['x-correlation-id'] || '');
   if (identity.status === 'valid') return identity.user;
-  if (identity.status === 'invalid') return null;
+  if (identity.status === 'invalid' || identity.status === 'rejected') return null;
 
   return local;
 }

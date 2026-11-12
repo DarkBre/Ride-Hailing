@@ -241,9 +241,19 @@ async function checkServicesHealth() {
   }));
 }
 
+let eventSource = null;
+
 function connectSSE() {
   const sseIndicator = document.getElementById('sse-indicator');
-  const eventSource = new EventSource(`${API_BASE}/simulation/stream`);
+  const token = auth[currentPassengerKey]?.token;
+  if (!token) {
+    sseIndicator.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+    return;
+  }
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource(
+    `${API_BASE}/simulation/stream?token=${encodeURIComponent(token)}`
+  );
 
   eventSource.onopen = () => {
     sseIndicator.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
@@ -503,7 +513,6 @@ async function cancelTrip() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initMap();
-  connectSSE();
   checkServicesHealth();
   setInterval(checkServicesHealth, 5000);
 
@@ -517,16 +526,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     logLine('warn', 'identity', `Đăng nhập demo thất bại: ${err.message}. Hãy chạy node scripts/seed-demo.js.`);
   }
   updateAuthStatus();
+  connectSSE();
   await fetchWalletBalance();
 
   document.getElementById('btn-login-passenger').addEventListener('click', async () => {
-    try { await login('passenger1'); await fetchWalletBalance(); } catch (err) { logLine('error', 'identity', err.message); }
+    try { await login('passenger1'); await fetchWalletBalance(); connectSSE(); } catch (err) { logLine('error', 'identity', err.message); }
   });
   document.getElementById('btn-login-passenger2').addEventListener('click', async () => {
-    try { await login('passenger2'); } catch (err) { logLine('error', 'identity', err.message); }
+    try { await login('passenger2'); connectSSE(); } catch (err) { logLine('error', 'identity', err.message); }
   });
   document.getElementById('btn-login-zero').addEventListener('click', async () => {
-    try { await login('passengerZero'); } catch (err) { logLine('error', 'identity', err.message); }
+    try { await login('passengerZero'); connectSSE(); } catch (err) { logLine('error', 'identity', err.message); }
   });
   document.getElementById('btn-login-driver').addEventListener('click', async () => {
     try { await login('driver'); } catch (err) { logLine('error', 'identity', err.message); }
@@ -537,6 +547,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await ensureLogin(currentPassengerKey);
       updateAuthStatus();
+      connectSSE();
       await fetchWalletBalance();
     } catch (err) {
       logLine('error', 'identity', err.message);

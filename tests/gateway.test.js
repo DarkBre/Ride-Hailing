@@ -1,10 +1,26 @@
 'use strict';
 
+require('./test-env');
 const test = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
-const { createGatewayServer } = require('../src/api-gateway/index');
+const crypto = require('node:crypto');
+const { createGatewayServer, broadcastSimulationEvent, __test } = require('../src/api-gateway/index');
 const config = require('../src/api-gateway/config');
+
+function signGatewayToken(userId) {
+  const payload = {
+    sub: userId,
+    userId,
+    user_id: userId,
+    role: 'PASSENGER',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  };
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', config.JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
 
 test('API Gateway Routing, CORS, Timeouts and Distributed Tracing', async (t) => {
   let gatewayServer;
@@ -158,7 +174,48 @@ test('API Gateway Routing, CORS, Timeouts and Distributed Tracing', async (t) =>
     assert.strictEqual(driverRequests[0].headers['x-internal-key'], config.DRIVER_INTERNAL_KEY);
   });
 
-  await t.test('8. Trả về HTTP 504 GATEWAY_TIMEOUT khi Upstream bị treo', async () => {
+  await t.test('8. Chặn broadcast, notification và SSE khi thiếu xác thực', async () => {
+    const broadcast = await fetch(`http://127.0.0.1:${GATEWAY_TEST_PORT}/api/v1/simulation/broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'NOTIFICATION', user_id: 'x' }),
+    });
+    assert.strictEqual(broadcast.status, 401);
+
+    const broadcastInternal = await fetch(`http://127.0.0.1:${GATEWAY_TEST_PORT}/api/v1/simulation/broadcast`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Key': config.INTERNAL_KEY,
+      },
+      body: JSON.stringify({ type: 'NOTIFICATION', user_id: 'x' }),
+    });
+    assert.strictEqual(broadcastInternal.status, 200);
+
+    const notifications = await fetch(`http://127.0.0.1:${GATEWAY_TEST_PORT}/api/v1/notifications`);
+    assert.strictEqual(notifications.status, 401);
+
+    const stream = await fetch(`http://127.0.0.1:${GATEWAY_TEST_PORT}/api/v1/simulation/stream`);
+    assert.strictEqual(stream.status, 401);
+    await stream.body?.cancel();
+  });
+
+  await t.test('9. Cho phép SSE khi có JWT hợp lệ', async () => {
+    const token = signGatewayToken('11111111-1111-4111-a111-111111111111');
+    const statusCode = await new Promise((resolve, reject) => {
+      const req = http.get(
+        `http://127.0.0.1:${GATEWAY_TEST_PORT}/api/v1/simulation/stream?token=${encodeURIComponent(token)}`,
+        (res) => {
+          resolve(res.statusCode);
+          res.destroy();
+        }
+      );
+      req.on('error', reject);
+    });
+    assert.strictEqual(statusCode, 200);
+  });
+
+  await t.test('10. Trả về HTTP 504 GATEWAY_TIMEOUT khi Upstream bị treo', async () => {
     const res = await fetch(`http://127.0.0.1:${GATEWAY_TEST_PORT}/api/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -171,7 +228,7 @@ test('API Gateway Routing, CORS, Timeouts and Distributed Tracing', async (t) =>
     assert(res.headers.get('x-correlation-id'));
   });
 
-  await t.test('9. Trả về HTTP 502 UPSTREAM_UNAVAILABLE khi Upstream bị sập (Offline)', async () => {
+  await t.test('11. Trả về HTTP 502 UPSTREAM_UNAVAILABLE khi Upstream bị sập (Offline)', async () => {
     // Port 18099 is offline
     config.SERVICES.driver = 'http://127.0.0.1:18099';
 
@@ -186,4 +243,28 @@ test('API Gateway Routing, CORS, Timeouts and Distributed Tracing', async (t) =>
     assert.strictEqual(body.error.code, 'UPSTREAM_UNAVAILABLE');
     assert(res.headers.get('x-correlation-id'));
   });
+});
+
+test('Gateway SSE broadcast scopes notification payloads to the authenticated user', () => {
+  const userA = '11111111-1111-4111-a111-111111111111';
+  const userB = '22222222-2222-4222-a222-222222222222';
+  const userClient = { written: [], write(payload) { this.written.push(payload); } };
+  const internalClient = { written: [], write(payload) { this.written.push(payload); } };
+
+  __test.sseClients.clear();
+  __test.sseClients.set(userClient, { internal: false, userId: userA });
+  __test.sseClients.set(internalClient, { internal: true, userId: null });
+
+  broadcastSimulationEvent({ type: 'NOTIFICATION', user_id: userB, message: 'for B' });
+  assert.strictEqual(userClient.written.length, 0);
+  assert.strictEqual(internalClient.written.length, 1);
+
+  broadcastSimulationEvent({ type: 'NOTIFICATION', user_id: userA, message: 'for A' });
+  assert.strictEqual(userClient.written.length, 1);
+  assert.strictEqual(internalClient.written.length, 2);
+
+  broadcastSimulationEvent({ type: 'HTTP_TRACE', path: '/health' });
+  assert.strictEqual(userClient.written.length, 2);
+
+  __test.sseClients.clear();
 });

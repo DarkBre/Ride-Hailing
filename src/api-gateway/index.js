@@ -4,12 +4,21 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { pipeline } = require('node:stream');
 const config = require('./config');
+const { authenticateRequest, isInternalRequest } = require('./auth');
 
-const sseClients = new Set();
+const sseClients = new Map();
 
 function broadcastSimulationEvent(eventData) {
   const payload = `data: ${JSON.stringify(eventData)}\n\n`;
-  for (const client of sseClients) {
+  for (const [client, meta] of sseClients) {
+    // Notification/payment payloads are user-scoped. Internal service clients may observe all.
+    const targetUserId = eventData.user_id || eventData.userId;
+    if (!meta.internal && targetUserId && targetUserId !== meta.userId) {
+      continue;
+    }
+    if (!meta.internal && eventData.type === 'NOTIFICATION' && !targetUserId) {
+      continue;
+    }
     try {
       client.write(payload);
     } catch (_) {
@@ -20,7 +29,7 @@ function broadcastSimulationEvent(eventData) {
 
 // Periodic heartbeat to prevent client connection timeout
 setInterval(() => {
-  for (const client of sseClients) {
+  for (const [client] of sseClients) {
     try {
       client.write(': heartbeat\n\n');
     } catch (_) {
@@ -158,6 +167,16 @@ function createGatewayServer() {
 
     // SSE Stream for Web Simulation Dashboard
     if (pathname === '/api/v1/simulation/stream') {
+      const sseAuth = authenticateRequest(req, parsedUrl);
+      if (!sseAuth) {
+        return sendJson(
+          res,
+          401,
+          null,
+          { code: 'UNAUTHORIZED', message: 'A valid JWT is required for the simulation stream' },
+          corrId
+        );
+      }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -176,7 +195,7 @@ function createGatewayServer() {
         })}\n\n`
       );
 
-      sseClients.add(res);
+      sseClients.set(res, sseAuth);
       req.on('close', () => {
         sseClients.delete(res);
       });
@@ -185,6 +204,15 @@ function createGatewayServer() {
 
     // Broadcast endpoint for internal services or test runners
     if (pathname === '/api/v1/simulation/broadcast' && method === 'POST') {
+      if (!isInternalRequest(req)) {
+        return sendJson(
+          res,
+          401,
+          null,
+          { code: 'UNAUTHORIZED_INTERNAL', message: 'A valid X-Internal-Key is required for broadcast' },
+          corrId
+        );
+      }
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       try {
@@ -198,6 +226,17 @@ function createGatewayServer() {
       } catch (err) {
         return sendJson(res, 400, null, { code: 'INVALID_JSON', message: err.message }, corrId);
       }
+    }
+
+    // Notification reads require a JWT (or an internal service key).
+    if (pathname.startsWith('/api/v1/notifications') && !authenticateRequest(req, parsedUrl)) {
+      return sendJson(
+        res,
+        401,
+        null,
+        { code: 'UNAUTHORIZED', message: 'A valid JWT is required to read notifications' },
+        corrId
+      );
     }
 
     // Upstream Resolution
@@ -351,4 +390,7 @@ module.exports = {
   createGatewayServer,
   broadcastSimulationEvent,
   start,
+  __test: {
+    sseClients,
+  },
 };

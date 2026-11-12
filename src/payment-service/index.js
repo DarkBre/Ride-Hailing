@@ -47,6 +47,7 @@ async function notifyGateway(eventData) {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(bodyStr),
           'X-Correlation-ID': eventData.correlation_id || '',
+          'X-Internal-Key': config.INTERNAL_KEY,
         },
         timeout: 1000,
       },
@@ -224,6 +225,7 @@ async function start() {
     await broker.startConsumer(wrappedHandler);
   } catch (err) {
     console.error(`[${new Date().toISOString()}] [payment-service] [WARN] RabbitMQ startup error:`, err.message);
+    broker.scheduleReconnect();
   }
 
   // 3. Start Transactional Outbox Worker

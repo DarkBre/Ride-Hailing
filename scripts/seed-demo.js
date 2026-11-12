@@ -146,7 +146,7 @@ ON CONFLICT (user_id) DO UPDATE SET
   try {
     execFileSync(
       'docker',
-      ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'driver_db', '-v', 'ON_ERROR_STOP=1', '-c', sql],
+      ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'postgres', 'psql', '-U', process.env.POSTGRES_USER || 'postgres', '-d', 'driver_db', '-v', 'ON_ERROR_STOP=1', '-c', sql],
       { stdio: 'inherit' }
     );
     console.log('[seed] Đã tạo/cập nhật hồ sơ Driver trong driver_db.');

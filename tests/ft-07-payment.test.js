@@ -1,5 +1,6 @@
 'use strict';
 
+require('./test-env');
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('node:crypto');
@@ -21,8 +22,10 @@ class HighFidelityMockDb {
     this.wallet_topups = new Map();
     this.transactions = [];
     this.outbox_events = [];
+    this.pending_captures = new Set();
     this.processed_events = new Set();
     this.advisoryLocks = new Set();
+    this.forceWalletUpdateMiss = false;
   }
 
   async query(sql, params = []) {
@@ -43,6 +46,32 @@ class HighFidelityMockDb {
       }
       this.processed_events.add(eventId);
       return { rowCount: 1, rows: [] };
+    }
+
+    // 2b. Pending captures
+    if (s.includes('INSERT INTO pending_captures')) {
+      const tripId = params[0];
+      const existed = this.pending_captures.has(tripId);
+      this.pending_captures.add(tripId);
+      return { rowCount: existed ? 0 : 1, rows: [] };
+    }
+    if (s.includes('DELETE FROM pending_captures WHERE trip_id = $1')) {
+      const deleted = this.pending_captures.delete(params[0]);
+      return { rowCount: deleted ? 1 : 0, rows: [] };
+    }
+    if (s.includes('SELECT trip_id FROM pending_captures WHERE trip_id = $1')) {
+      return { rows: this.pending_captures.has(params[0]) ? [{ trip_id: params[0] }] : [] };
+    }
+
+    // 2c. Existing hold_success outbox lookup
+    if (s.includes('SELECT id FROM outbox_events') && s.includes("event_type = 'payment.event.hold_success'")) {
+      const tripId = params[0];
+      const rows = this.outbox_events
+        .filter((event) => event.aggregate_id === tripId
+          && event.event_type === 'payment.event.hold_success'
+          && ['PENDING', 'PUBLISHING', 'PUBLISHED'].includes(event.status))
+        .map((event) => ({ id: event.id }));
+      return { rows };
     }
 
     // 3. Select hold
@@ -69,6 +98,7 @@ class HighFidelityMockDb {
 
     // 6. Update wallet (hold success)
     if (s.includes('UPDATE wallets SET balance = balance - $1, held_balance = held_balance + $1')) {
+      if (this.forceWalletUpdateMiss) return { rowCount: 0, rows: [] };
       const [amount, walletId] = params;
       for (const w of this.wallets.values()) {
         if (w.id === walletId) {
@@ -124,17 +154,19 @@ class HighFidelityMockDb {
 
     // 10. Capture settlement (debited from held_balance)
     if (s.includes('UPDATE wallets SET held_balance = held_balance - $1') && !s.includes('balance = balance + $1')) {
+      if (this.forceWalletUpdateMiss) return { rowCount: 0, rows: [] };
       const [amount, userId] = params;
       const w = this.wallets.get(userId);
       if (w) {
         if (w.held_balance < amount) throw new Error('CHECK constraint violation: held_balance >= 0');
         w.held_balance -= amount;
       }
-      return { rowCount: 1 };
+      return { rowCount: w ? 1 : 0 };
     }
 
     // 11. Refund compensation (held_balance -> balance)
     if (s.includes('UPDATE wallets SET held_balance = held_balance - $1, balance = balance + $1')) {
+      if (this.forceWalletUpdateMiss) return { rowCount: 0, rows: [] };
       const [amount, userId] = params;
       const w = this.wallets.get(userId);
       if (w) {
@@ -142,7 +174,7 @@ class HighFidelityMockDb {
         w.held_balance -= amount;
         w.balance += amount;
       }
-      return { rowCount: 1 };
+      return { rowCount: w ? 1 : 0 };
     }
 
     // 12. Update hold state
@@ -150,7 +182,9 @@ class HighFidelityMockDb {
       const tripId = params[0];
       const state = s.includes("'CAPTURED'") ? 'CAPTURED' : s.includes("'REFUNDED'") ? 'REFUNDED' : params[1];
       const h = this.payment_holds.get(tripId);
-      if (h) h.state = state;
+      if (!h) return { rowCount: 0 };
+      if (s.includes("AND state = 'HELD'") && h.state !== 'HELD') return { rowCount: 0 };
+      h.state = state;
       return { rowCount: 1 };
     }
 
