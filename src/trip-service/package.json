@@ -1,0 +1,16 @@
+{
+  "name": "trip-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DS03 Trip / Booking Microservice & Saga Coordinator",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.9"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
