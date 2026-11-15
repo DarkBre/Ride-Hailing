@@ -430,15 +430,15 @@ async function runTests() {
         },
       });
       assert.strictEqual(resLateHold.status, 200);
-      assert.strictEqual(resLateHold.body.data.action, 'STALE_EVENT_COMPENSATED_PAYMENT_RELEASED');
+      assert.strictEqual(resLateHold.body.data.action, 'STALE_EVENT_COMPENSATING_PAYMENT_RELEASE_REQUESTED');
 
       // 1. Chuyến xe vẫn giữ nguyên trạng thái CANCELLED, tuyệt đối không bị ghi đè CONFIRMED
       const trip = service.db.get('SELECT * FROM trips WHERE id = ?;', failedTripId);
       assert.strictEqual(trip.status, 'CANCELLED');
 
-      // 2. Saga instance chuyển sang COMPENSATED với bước giải phóng tiền
+      // 2. Saga instance chuyển sang COMPENSATING chờ Payment xác nhận hoàn tiền (chưa tự nhận COMPENSATED)
       const saga = service.sagaCoordinator.getSagaStatus(failedTripId);
-      assert.strictEqual(saga.status, SAGA_STATUS.COMPENSATED);
+      assert.strictEqual(saga.status, SAGA_STATUS.COMPENSATING);
       assert.strictEqual(saga.current_step, 'COMPENSATION_RELEASE_PAYMENT');
 
       // 3. Outbox bắt buộc phải sinh ra sự kiện payment.event.refund_requested để giải phóng tiền đã giữ
@@ -450,6 +450,21 @@ async function runTests() {
       const refundPayload = JSON.parse(refundEvt.payload);
       assert.strictEqual(refundPayload.trip_id, failedTripId);
       assert(refundPayload.amount > 0, 'Số tiền hoàn lại phải > 0');
+
+      // 4. Khi Payment Service xác nhận hoàn tiền (payment.event.refund_success) -> Saga mới chuyển COMPENSATED
+      const resAck = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_refund_ack_007',
+          event_type: 'payment.event.refund_success',
+          payload: { trip_id: failedTripId },
+        },
+      });
+      assert.strictEqual(resAck.status, 200);
+      const sagaAfterAck = service.sagaCoordinator.getSagaStatus(failedTripId);
+      assert.strictEqual(sagaAfterAck.status, SAGA_STATUS.COMPENSATED);
     });
 
     await test('Saga 7.1: Duplicate stale hold_success -> Phát hiện trùng lặp và không nhân bản lệnh giải phóng tiền', async () => {

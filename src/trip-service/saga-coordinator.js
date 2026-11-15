@@ -267,7 +267,7 @@ class SagaCoordinator {
           `UPDATE saga_instances 
            SET status = ?, current_step = 'COMPENSATION_RELEASE_PAYMENT', updated_at = ? 
            WHERE trip_id = ?;`,
-          SAGA_STATUS.COMPENSATED,
+          SAGA_STATUS.COMPENSATING,
           now,
           tripId
         );
@@ -275,7 +275,7 @@ class SagaCoordinator {
         this.markEventProcessed(eventId, 'payment.event.hold_success');
 
         return {
-          action: 'STALE_EVENT_COMPENSATED_PAYMENT_RELEASED',
+          action: 'STALE_EVENT_COMPENSATING_PAYMENT_RELEASE_REQUESTED',
           tripId,
           refundEventId: compensationEvent ? compensationEvent.eventId : null,
         };
@@ -446,6 +446,69 @@ class SagaCoordinator {
   }
 
   /**
+   * Xử lý xác nhận hoàn tiền từ Payment Service: payment.event.refund_success hoặc payment.event.refunded
+   * Saga chuyển từ COMPENSATING sang COMPENSATED khi việc hoàn tiền đã được participant xác nhận.
+   */
+  handlePaymentRefundSuccess({ eventId, tripId, correlationId }) {
+    return this.db.tx(() => {
+      if (this.isEventProcessed(eventId)) {
+        return { duplicate: true, action: 'IGNORED' };
+      }
+
+      const saga = this.db.get('SELECT * FROM saga_instances WHERE trip_id = ?;', tripId);
+      if (!saga) {
+        throw new Error(`Không tìm thấy Saga cho chuyến đi ${tripId}`);
+      }
+
+      const now = new Date().toISOString();
+      this.db.run(
+        `UPDATE saga_instances 
+         SET status = ?, current_step = 'COMPENSATED', updated_at = ? 
+         WHERE trip_id = ?;`,
+        SAGA_STATUS.COMPENSATED,
+        now,
+        tripId
+      );
+
+      this.markEventProcessed(eventId, 'payment.event.refund_success');
+
+      return { action: 'COMPENSATION_ACKNOWLEDGED_COMPENSATED', tripId };
+    });
+  }
+
+  /**
+   * Xử lý xác nhận giải phóng tài xế từ Driver Service: trip.event.driver_released
+   */
+  handleDriverReleased({ eventId, tripId, driverId, correlationId }) {
+    return this.db.tx(() => {
+      if (this.isEventProcessed(eventId)) {
+        return { duplicate: true, action: 'IGNORED' };
+      }
+
+      const saga = this.db.get('SELECT * FROM saga_instances WHERE trip_id = ?;', tripId);
+      if (!saga) {
+        throw new Error(`Không tìm thấy Saga cho chuyến đi ${tripId}`);
+      }
+
+      const now = new Date().toISOString();
+      // Nếu Saga đang COMPENSATING ở bước giải phóng tài xế (và không có khoản tiền cần refund), chuyển COMPENSATED
+      if (saga.status === SAGA_STATUS.COMPENSATING && saga.current_step === 'COMPENSATION_RELEASE_DRIVER') {
+        this.db.run(
+          `UPDATE saga_instances 
+           SET status = ?, current_step = 'COMPENSATED', updated_at = ? 
+           WHERE trip_id = ?;`,
+          SAGA_STATUS.COMPENSATED,
+          now,
+          tripId
+        );
+      }
+
+      this.markEventProcessed(eventId, 'trip.event.driver_released');
+      return { action: 'DRIVER_RELEASE_CONFIRMED', tripId };
+    });
+  }
+
+  /**
    * Điều phối chung một event envelope tới Saga (dùng chung cho cả RabbitMQ Consumer và Webhook /internal/events)
    */
   dispatchEvent(envelope) {
@@ -480,6 +543,22 @@ class SagaCoordinator {
           tripId: payload.trip_id,
           driverId: payload.driver_id,
           reason: payload.reason,
+          correlationId: correlation_id,
+        });
+
+      case 'payment.event.refund_success':
+      case 'payment.event.refunded':
+        return this.handlePaymentRefundSuccess({
+          eventId: event_id,
+          tripId: payload.trip_id,
+          correlationId: correlation_id,
+        });
+
+      case 'trip.event.driver_released':
+        return this.handleDriverReleased({
+          eventId: event_id,
+          tripId: payload.trip_id,
+          driverId: payload.driver_id,
           correlationId: correlation_id,
         });
 

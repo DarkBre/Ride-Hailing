@@ -543,6 +543,7 @@ async function runTests() {
         },
       });
       assert.strictEqual(t1.status, 201);
+      assert.strictEqual(t1.body.data.pricing_source, 'DRIVER_SERVICE_LIVE');
       const nearbyCall = driverCalls.find((c) => c.pathname === '/drivers/nearby');
       assert.ok(nearbyCall);
       assert.strictEqual(nearbyCall.internalKey, config.DRIVER_INTERNAL_KEY);
@@ -563,6 +564,7 @@ async function runTests() {
         },
       });
       assert.strictEqual(t2.status, 201);
+      assert.strictEqual(t2.body.data.pricing_source, 'OFFLINE_FALLBACK');
 
       const tripId = t1.body.data.id;
 
@@ -671,6 +673,92 @@ async function runTests() {
         driver_id: 'drv-prof-1',
         reservation_id: 'res-abc-1',
       });
+    });
+
+    await test('Saga Compensation Lifecycle: Huỷ chuyến CONFIRMED -> Saga COMPENSATING (không nhận bừa COMPENSATED); nhận payment.event.refund_success -> COMPENSATED', async () => {
+      const paxToken = signToken({ userId: 'pax-comp-1', role: 'PASSENGER', email: 'paxcomp@test.com' });
+      // 1. Tạo chuyến
+      const cRes = await makeRequest(8908, {
+        method: 'POST',
+        path: '/trips',
+        headers: { Authorization: `Bearer ${paxToken}` },
+        body: {
+          pickup_latitude: 10.77,
+          pickup_longitude: 106.7,
+          pickup_address: 'Start',
+          dropoff_latitude: 10.78,
+          dropoff_longitude: 106.71,
+          dropoff_address: 'End',
+        },
+      });
+      assert.strictEqual(cRes.status, 201);
+      const tripId = cRes.body.data.id;
+
+      // 2. driver_matched & hold_success -> CONFIRMED
+      await makeRequest(8908, {
+        method: 'POST',
+        path: '/internal/events',
+        headers: { 'x-internal-key': config.INTERNAL_KEY },
+        body: {
+          event_id: 'evt-c-match',
+          event_type: 'trip.event.driver_matched',
+          payload: { trip_id: tripId, driver_id: 'drv-prof-1', driver_user_id: 'usr-drv-1', reservation_id: 'res-comp-1' },
+        },
+      });
+      await makeRequest(8908, {
+        method: 'POST',
+        path: '/internal/events',
+        headers: { 'x-internal-key': config.INTERNAL_KEY },
+        body: {
+          event_id: 'evt-c-hold',
+          event_type: 'payment.event.hold_success',
+          payload: { trip_id: tripId },
+        },
+      });
+
+      // 3. Huỷ chuyến khi CONFIRMED
+      const cancelRes = await makeRequest(8908, {
+        method: 'POST',
+        path: `/trips/${tripId}/cancel`,
+        headers: { Authorization: `Bearer ${paxToken}` },
+        body: { reason: 'Khách bận đột xuất' },
+      });
+      assert.strictEqual(cancelRes.status, 200);
+
+      // Saga PHẢI ở trạng thái COMPENSATING (chờ Payment xác nhận hoàn tiền), KHÔNG được COMPENSATED
+      const sagaInFlight = tripWithDriverSvc.sagaCoordinator.getSagaStatus(tripId);
+      assert.strictEqual(sagaInFlight.status, 'COMPENSATING');
+      assert.strictEqual(sagaInFlight.current_step, 'COMPENSATION_AWAITING_PAYMENT_REFUND');
+
+      // 4. Nhận payment.event.refund_success từ Payment Service -> Saga mới hoàn tất COMPENSATED
+      const ackRes = await makeRequest(8908, {
+        method: 'POST',
+        path: '/internal/events',
+        headers: { 'x-internal-key': config.INTERNAL_KEY },
+        body: {
+          event_id: 'evt-c-refund-ack',
+          event_type: 'payment.event.refund_success',
+          payload: { trip_id: tripId },
+        },
+      });
+      assert.strictEqual(ackRes.status, 200);
+      assert.strictEqual(ackRes.body.data.action, 'COMPENSATION_ACKNOWLEDGED_COMPENSATED');
+
+      const sagaDone = tripWithDriverSvc.sagaCoordinator.getSagaStatus(tripId);
+      assert.strictEqual(sagaDone.status, 'COMPENSATED');
+
+      // Duplicate refund_success event xử lý an toàn
+      const dupRes = await makeRequest(8908, {
+        method: 'POST',
+        path: '/internal/events',
+        headers: { 'x-internal-key': config.INTERNAL_KEY },
+        body: {
+          event_id: 'evt-c-refund-ack',
+          event_type: 'payment.event.refund_success',
+          payload: { trip_id: tripId },
+        },
+      });
+      assert.strictEqual(dupRes.body.data.duplicate, true);
     });
   } finally {
     await tripWithDriverSvc.stop();
