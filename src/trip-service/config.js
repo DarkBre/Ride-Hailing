@@ -36,6 +36,7 @@ module.exports = {
   DRIVER_INTERNAL_KEY: process.env.DRIVER_INTERNAL_KEY || INTERNAL_KEY,
   DRIVER_TRIP_KEY: process.env.DRIVER_TRIP_KEY || INTERNAL_KEY,
   MATCHING_RADIUS_KM: Number(process.env.MATCHING_RADIUS_KM || 5),
+  PRICING_FALLBACK_SUPPLY: Number(process.env.PRICING_FALLBACK_SUPPLY || 3),
   NODE_ENV: process.env.NODE_ENV || 'development',
   EVENT_TRANSPORT,
   RABBITMQ_URL,

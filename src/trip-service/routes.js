@@ -213,7 +213,9 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
           config.MATCHING_RADIUS_KM,
           correlationId
         );
-        const supply = Number.isFinite(liveSupply) ? liveSupply : 3; // Fallback khi Driver Service offline
+        const hasLiveSupply = liveSupply !== null && Number.isFinite(liveSupply);
+        const supply = hasLiveSupply ? liveSupply : config.PRICING_FALLBACK_SUPPLY;
+        const pricingSource = hasLiveSupply ? 'DRIVER_SERVICE_LIVE' : 'OFFLINE_FALLBACK';
 
         const fareResult = pricingEngine.calculateFare({
           pickup: { lat: pLat, lon: pLon },
@@ -266,6 +268,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
           estimated_fare: fareResult.estimated_fare,
           distance_km: fareResult.distance_km,
           surge_multiplier: fareResult.surge_multiplier,
+          pricing_source: pricingSource,
         };
       },
     })),
@@ -538,19 +541,23 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
           }
 
           // Đồng bộ trạng thái Saga Instance nguyên tử trong cùng transaction
+          // Chỉ chuyển COMPENSATING khi cần bù trừ (chờ xác nhận từ Payment/Driver), không tự chuyển COMPENSATED sớm
+          const sagaStatus = hasCompensation ? SAGA_STATUS.COMPENSATING : SAGA_STATUS.FAILED;
+          const currentStep = hasCompensation ? 'COMPENSATION_AWAITING_PAYMENT_REFUND' : 'TRIP_CANCELLED_BEFORE_MATCH';
+
           db.run(
             `UPDATE saga_instances 
              SET status = ?, current_step = ?, error_reason = ?, updated_at = ? 
              WHERE trip_id = ?;`,
-            hasCompensation ? SAGA_STATUS.COMPENSATED : SAGA_STATUS.FAILED,
-            hasCompensation ? 'TRIP_CANCELLED_COMPENSATED' : 'TRIP_CANCELLED_BEFORE_MATCH',
+            sagaStatus,
+            currentStep,
             cancelReason,
             now,
             params.id
           );
 
           return {
-            response: { id: params.id, status: 'CANCELLED', reason: cancelReason },
+            response: { id: params.id, status: 'CANCELLED', reason: cancelReason, saga_status: sagaStatus },
             releaseInfo: trip.reservation_id
               ? { tripId: params.id, driverId: trip.driver_id, reservationId: trip.reservation_id }
               : null,

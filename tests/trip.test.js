@@ -724,7 +724,23 @@ async function runTests() {
       assert(refundPayment, 'Phải có sự kiện bù trừ payment.event.refund_requested');
       assert.strictEqual(JSON.parse(releaseDriver.payload).driver_id, 'driver_d88');
       assert(JSON.parse(refundPayment.payload).amount > 0);
-      assert.strictEqual(sagaAfterCancel.status, 'COMPENSATED', 'Saga phải đồng bộ sang COMPENSATED khi huỷ chuyến đã giữ tài xế/tiền');
+      assert.strictEqual(sagaAfterCancel.status, 'COMPENSATING', 'Saga phải ở trạng thái COMPENSATING chờ xác nhận bù trừ');
+
+      // Khi Payment Service xác nhận hoàn tiền qua sự kiện, Saga chuyển thành COMPENSATED
+      await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: {
+          'x-internal-key': 'dev-internal-service-key-ds03',
+        },
+        body: {
+          event_id: 'evt_refund_trip_test_01',
+          event_type: 'payment.event.refund_success',
+          payload: { trip_id: confirmedTripId },
+        },
+      });
+      const sagaFinal = service.sagaCoordinator.getSagaStatus(confirmedTripId);
+      assert.strictEqual(sagaFinal.status, 'COMPENSATED', 'Saga phải chuyển COMPENSATED khi Payment xác nhận hoàn tiền');
     });
 
     // 14. Boundary Tests: Toạ độ đường xích đạo lat=0, JWT now>=exp tại Trip Service và Fail-Fast Production
