@@ -1,0 +1,18 @@
+{
+  "name": "ds03-matching-service",
+  "private": true,
+  "version": "1.0.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc --strict --module Node16 --target ES2022 --outDir dist index.ts",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test *.test.cjs"
+  },
+  "dependencies": { "pg": "8.16.3", "amqplib": "0.10.9" },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "@types/pg": "8.15.5",
+    "@types/amqplib": "0.10.8",
+    "typescript": "5.9.3"
+  }
+}
