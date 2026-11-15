@@ -1,0 +1,17 @@
+{
+  "name": "notification-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DS03 Notification Consumer for passengers and drivers",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.9"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
