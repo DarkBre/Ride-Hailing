@@ -27,13 +27,28 @@ async function runTestFile(file) {
   const filePath = path.join(__dirname, file);
   return new Promise((resolve) => {
     console.log(`\n▶ [CHẠY KIỂM THỬ]: ${file}...`);
+    let output = '';
     const child = spawn(process.execPath, ['--test', filePath], {
-      stdio: 'inherit',
       env: process.env,
     });
 
+    child.stdout.on('data', (d) => {
+      process.stdout.write(d);
+      output += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      process.stderr.write(d);
+      output += d.toString();
+    });
+
     child.on('close', (code) => {
-      resolve({ file, passed: code === 0, code });
+      const passMatch = output.match(/ℹ pass (\d+)/);
+      const totalMatch = output.match(/ℹ tests (\d+)/);
+      const failMatch = output.match(/ℹ fail (\d+)/);
+      const passed = passMatch ? parseInt(passMatch[1], 10) : (code === 0 ? 1 : 0);
+      const total = totalMatch ? parseInt(totalMatch[1], 10) : passed;
+      const failed = failMatch ? parseInt(failMatch[1], 10) : (code !== 0 ? 1 : 0);
+      resolve({ file, passed: code === 0, code, testPassed: passed, testTotal: total, testFailed: failed });
     });
   });
 }
@@ -55,23 +70,33 @@ async function main() {
   console.log('='.repeat(70));
 
   let allPassed = true;
+  let totalTestPassed = 0;
+  let totalTestCount = 0;
   for (const r of results) {
     const icon = r.passed ? '✅ PASS' : '❌ FAIL';
-    console.log(` ${icon} | ${r.file}`);
+    console.log(` ${icon} | ${r.file}: ${r.testPassed}/${r.testTotal} tests`);
     if (!r.passed) allPassed = false;
+    totalTestPassed += r.testPassed;
+    totalTestCount += r.testTotal;
   }
 
   console.log('='.repeat(70));
   if (allPassed) {
-    console.log('🎉 TẤT CẢ CÁC BÀI TEST CỦA THÀNH VIÊN 3 ĐÃ ĐẠT 100% TIÊU CHÍ NGHIỆM THU!');
-    process.exit(0);
+    console.log(`🎉 TẤT CẢ ${totalTestPassed}/${totalTestCount} BÀI TEST CỦA THÀNH VIÊN 3 ĐÃ ĐẠT 100% TIÊU CHÍ NGHIỆM THU!`);
+    if (require.main === module) process.exit(0);
   } else {
     console.error('⚠️ Có bài test thất bại. Hãy kiểm tra chi tiết ở log phía trên.');
-    process.exit(1);
+    if (require.main === module) process.exit(1);
   }
+
+  return { passed: totalTestPassed, total: totalTestCount, allPassed, results };
 }
 
-main().catch((err) => {
-  console.error('Fatal test runner error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Fatal test runner error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { runTests: main, testFiles };

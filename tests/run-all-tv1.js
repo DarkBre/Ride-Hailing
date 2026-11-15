@@ -40,10 +40,16 @@ async function main() {
     console.log('   - Lưu ý phạm vi: Dùng mock amqplib & local HTTP Driver mock; tích hợp Compose RabbitMQ thật với TV2/TV3 chạy ở bước ghép nhóm.');
     console.log('='.repeat(70));
     process.exitCode = 0;
+    return { passed: totalPassed, total: totalCount };
   } catch (err) {
     console.error('\n❌ CÓ BÀI TEST THẤT BẠI:', err);
-    process.exit(1);
+    if (require.main === module) process.exit(1);
+    throw err;
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { runTests: main };
