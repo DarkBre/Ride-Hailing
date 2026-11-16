@@ -15,6 +15,7 @@
     "test:broker": "node src/matching-service/broker.integration.cjs",
     "test:ping": "node tests/ping-all.js",
     "test:e2e": "node tests/run-e2e-all.js",
+    "test:browser": "node tests/browser-e2e.test.js",
     "test:tv1": "node tests/run-all-tv1.js",
     "test:tv2": "node tests/run-all-tv2.js",
     "test:tv3": "node tests/run-all-tv3.js",
@@ -30,5 +31,8 @@
     "sqlite"
   ],
   "author": "DarkBre",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "playwright": "^1.65.1"
+  }
 }

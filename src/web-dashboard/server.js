@@ -37,6 +37,15 @@ const server = http.createServer((req, res) => {
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
+      // Support SPA client-side routing (fallback to index.html for extensionless routes)
+      if (!path.extname(pathname) || pathname.startsWith('/login') || pathname.startsWith('/passenger') || pathname.startsWith('/driver')) {
+        const indexPath = path.join(PUBLIC_DIR, 'index.html');
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache',
+        });
+        return fs.createReadStream(indexPath).pipe(res);
+      }
       // 404
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('404 Not Found');

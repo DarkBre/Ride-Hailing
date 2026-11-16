@@ -84,6 +84,33 @@ h2 {
   border: 1px solid #334155;
 }
 
+/* Custom Marker Pin Styles */
+.custom-marker-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.marker-pickup {
+  background-color: #10b981;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+}
+
+.marker-dropoff {
+  background-color: #f59e0b;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+}
+
+.marker-driver {
+  background-color: #0284c7;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+}
+
 /* Stepper state styling (No decorative glowing text shadows) */
 .step-item {
   position: relative;
@@ -91,12 +118,16 @@ h2 {
 }
 
 .step-active {
+  background-color: rgba(16, 185, 129, 0.15) !important;
   color: #10b981 !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
   font-weight: 600;
 }
 
 .step-failed {
+  background-color: rgba(239, 68, 68, 0.15) !important;
   color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
   font-weight: 600;
 }
 
@@ -120,6 +151,38 @@ h2 {
 .log-driver { border-color: rgba(168, 85, 247, 0.3); }
 .log-matching { border-color: rgba(236, 72, 153, 0.3); }
 .log-broker { border-color: rgba(99, 102, 241, 0.3); }
+
+/* Toast Notifications */
+.toast-item {
+  pointer-events: auto;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.toast-info {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #f8fafc;
+}
+
+.toast-success {
+  background: #064e3b;
+  border: 1px solid #059669;
+  color: #ecfdf5;
+}
+
+.toast-error {
+  background: #7f1d1d;
+  border: 1px solid #dc2626;
+  color: #fef2f2;
+}
 
 /* Focus outlines */
 button:focus-visible,
