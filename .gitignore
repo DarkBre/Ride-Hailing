@@ -26,3 +26,14 @@ data/
 # Reference folders (Bản mẫu tham khảo, không đưa vào git)
 DS03 Build a Ride-Hailing/
 *.zip
+
+# AI harnesses & tool caches
+.agent/
+.agents/
+.claude/
+.codex/
+.cursor/
+.dsh/
+.gemini/
+.opencode/
+.impeccable/

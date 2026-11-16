@@ -1,57 +1,130 @@
-/* Custom scrollbar */
+/* ==========================================================================
+   DS03 Dispatch & Operations Console - Impeccable Design System
+   Mode: Operate | Restrained Precision Dark Theme
+   ========================================================================== */
+
+:root {
+  --color-canvas: #090d16;
+  --color-panel: #0f172a;
+  --color-panel-elevated: #1e293b;
+  --color-panel-hover: #334155;
+  --color-border: #1e293b;
+  --color-border-subtle: #334155;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-accent-blue: #3b82f6;
+  --color-accent-emerald: #10b981;
+  --color-accent-amber: #f59e0b;
+  --color-accent-red: #ef4444;
+}
+
+/* Heading Hierarchy (Ensures high-craft 1.5x scale step) */
+h1 {
+  font-size: 1.5rem !important;
+  line-height: 2rem !important;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* Custom Text Selection */
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: #ffffff;
+}
+
+/* Tabular Numerals for Metrics and Identifiers */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Clean accessible scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: #090d16;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(71, 85, 105, 0.8);
+  background: #334155;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 1);
+  background: #475569;
 }
 
 /* Leaflet Map overrides for dark theme */
 .leaflet-container {
-  background-color: #0f172a !important;
+  background-color: #090d16 !important;
+  font-family: inherit;
 }
 
 .leaflet-tile {
-  filter: brightness(0.8) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+  filter: brightness(0.7) invert(1) contrast(2.6) hue-rotate(200deg) saturate(0.2) brightness(0.75);
 }
 
-/* Pulsing effect for active step */
+.leaflet-popup-content-wrapper {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-popup-tip {
+  background: #0f172a !important;
+  border: 1px solid #334155;
+}
+
+/* Stepper state styling (No decorative glowing text shadows) */
+.step-item {
+  position: relative;
+  transition: color 0.15s ease;
+}
+
 .step-active {
-  color: #34d399 !important;
-  font-weight: 700;
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+  color: #10b981 !important;
+  font-weight: 600;
 }
 
 .step-failed {
-  color: #f87171 !important;
-  font-weight: 700;
-  text-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+  color: #ef4444 !important;
+  font-weight: 600;
 }
 
-/* Log entry styles */
+/* Telemetry log entries (No 3px asymmetric border-left slop) */
 .log-entry {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.7);
-  border-left: 3px solid #64748b;
-  transition: background 0.2s;
+  background: #0b1120;
+  border: 1px solid #1e293b;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .log-entry:hover {
-  background: rgba(30, 41, 59, 0.9);
+  background: #111c33;
+  border-color: #334155;
 }
 
-.log-gateway { border-left-color: #38bdf8; }
-.log-payment { border-left-color: #34d399; }
-.log-trip { border-left-color: #f59e0b; }
-.log-driver { border-left-color: #a855f7; }
-.log-matching { border-left-color: #ec4899; }
-.log-broker { border-left-color: #6366f1; }
+.log-gateway { border-color: rgba(56, 189, 248, 0.3); }
+.log-payment { border-color: rgba(16, 185, 129, 0.3); }
+.log-trip { border-color: rgba(245, 158, 11, 0.3); }
+.log-driver { border-color: rgba(168, 85, 247, 0.3); }
+.log-matching { border-color: rgba(236, 72, 153, 0.3); }
+.log-broker { border-color: rgba(99, 102, 241, 0.3); }
+
+/* Focus outlines */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}

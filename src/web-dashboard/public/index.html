@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DS03 — Ride-Hailing Simulation Dashboard</title>
+  <title>DS03 — Ride-Hailing Operations & Simulation Console</title>
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Leaflet CSS & JS -->
@@ -11,40 +11,45 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-blue-600/30 selection:text-white">
 
-  <!-- Header -->
-  <header class="bg-slate-800 border-b border-slate-700 px-6 py-3.5 flex items-center justify-between shadow-md">
-    <div class="flex items-center space-x-3">
-      <div class="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-400 font-bold text-xl">
-        DS
+  <!-- Header: Industrial Command-Center Toolbar -->
+  <header class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between shrink-0 shadow-sm">
+    <div class="flex items-center space-x-3.5">
+      <div class="w-10 h-10 rounded-md bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-mono font-bold text-sm">
+        <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
       </div>
       <div>
-        <h1 class="text-lg font-bold text-white flex items-center gap-2">
-          DS03: Ride-Hailing Microservices Simulation Dashboard
-          <span class="text-xs font-normal px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">TV3 Module</span>
-        </h1>
-        <p class="text-xs text-slate-400">Distributed Systems (Hệ phân tán) • Payment (:8005) • Gateway (:8080) • RabbitMQ • Saga & DLQ</p>
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-xl font-bold text-slate-100 tracking-tight">
+            DS03 Operations Console
+          </h1>
+          <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">v1.0-mvp</span>
+          <span class="text-[11px] font-medium px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Distributed Core</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-0.5">Microservices Choreography • RabbitMQ 4 • Postgres 17 • Two-Phase Saga</p>
       </div>
     </div>
 
-    <!-- Health indicators -->
-    <div class="flex items-center space-x-4 text-xs">
-      <div class="flex items-center space-x-1.5 bg-slate-900/60 px-3 py-1.5 rounded-full border border-slate-700">
-        <span id="gateway-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-        <span class="text-slate-300">Gateway :8080</span>
+    <!-- Health indicators: Honest status indicators without decorative pulsing or card borders -->
+    <div class="flex items-center space-x-4 text-xs font-mono">
+      <div class="flex items-center space-x-2 text-slate-300">
+        <span id="gateway-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <span class="text-[11px]">Gateway :8080</span>
       </div>
-      <div class="flex items-center space-x-1.5 bg-slate-900/60 px-3 py-1.5 rounded-full border border-slate-700">
-        <span id="payment-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-        <span class="text-slate-300">Payment :8005</span>
+      <div class="flex items-center space-x-2 text-slate-300">
+        <span id="payment-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <span class="text-[11px]">Payment :8005</span>
       </div>
-      <div class="flex items-center space-x-1.5 bg-slate-900/60 px-3 py-1.5 rounded-full border border-slate-700">
-        <span id="notification-indicator" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-        <span class="text-slate-300">Notification :8006</span>
+      <div class="flex items-center space-x-2 text-slate-300">
+        <span id="notification-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <span class="text-[11px]">Notification :8006</span>
       </div>
-      <div class="flex items-center space-x-1.5 bg-slate-900/60 px-3 py-1.5 rounded-full border border-slate-700">
-        <span id="sse-indicator" class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-        <span class="text-slate-300">Live SSE Stream</span>
+      <div class="flex items-center space-x-2 text-slate-300">
+        <span id="sse-indicator" class="w-2 h-2 rounded-full bg-red-500"></span>
+        <span class="text-[11px]">Live SSE</span>
       </div>
     </div>
   </header>
@@ -52,209 +57,242 @@
   <!-- Main Content Grid -->
   <main class="flex-1 grid grid-cols-12 gap-4 p-4 overflow-hidden">
 
-    <!-- Column 1: Controls (Rider & Driver Views) - 4 cols -->
-    <section class="col-span-4 flex flex-col space-y-4 overflow-y-auto pr-1 max-h-[calc(100vh-80px)]">
+    <!-- Column 1: Multi-Persona Dispatch & Controls (4 cols) -->
+    <section class="col-span-4 flex flex-col space-y-3.5 overflow-y-auto pr-1 max-h-[calc(100vh-76px)]">
 
-      <!-- Demo JWT Login Card -->
-      <div class="bg-slate-800/80 rounded-xl border border-slate-700 p-4 shadow-lg backdrop-blur">
-        <div class="flex items-center justify-between pb-2 border-b border-slate-700">
-          <h2 class="font-bold text-indigo-300 flex items-center gap-2">
-            <span>🔐</span> Đăng nhập Demo (JWT)
+      <!-- Persona Authentication & Role Switcher -->
+      <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 shadow-sm">
+        <div class="flex items-center justify-between pb-2.5 border-b border-slate-800">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            Tài Khoản Mô Phỏng (JWT)
           </h2>
-          <span id="auth-status" class="text-[10px] text-amber-400">Chưa đăng nhập</span>
+          <span id="auth-status" class="text-[11px] font-mono text-amber-400">Chưa đăng nhập</span>
         </div>
-        <div class="grid grid-cols-2 gap-2 mt-3">
-          <button id="btn-login-passenger" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-1.5 rounded font-medium transition active:scale-95">
+        <div class="grid grid-cols-4 gap-1.5 mt-3">
+          <button id="btn-login-passenger" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-1.5 rounded font-medium transition border border-slate-700/60 active:scale-[0.98]">
             Khách 1
           </button>
-          <button id="btn-login-passenger2" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-1.5 rounded font-medium transition active:scale-95">
+          <button id="btn-login-passenger2" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-1.5 rounded font-medium transition border border-slate-700/60 active:scale-[0.98]">
             Khách 2
           </button>
-          <button id="btn-login-zero" class="bg-rose-600 hover:bg-rose-500 text-white text-xs py-1.5 rounded font-medium transition active:scale-95">
+          <button id="btn-login-zero" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-1.5 rounded font-medium transition border border-slate-700/60 active:scale-[0.98]">
             Khách 0đ
           </button>
-          <button id="btn-login-driver" class="bg-cyan-600 hover:bg-cyan-500 text-white text-xs py-1.5 rounded font-medium transition active:scale-95">
+          <button id="btn-login-driver" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-1.5 rounded font-medium transition border border-slate-700/60 active:scale-[0.98]">
             Tài xế
           </button>
         </div>
-        <p class="text-[10px] text-slate-500 mt-2">
-          Dashboard tự đăng nhập Khách 1 &amp; Tài xế khi tải. Chạy <code>node scripts/seed-demo.js</code> để tạo tài khoản demo.
+        <p class="text-[11px] text-slate-400 mt-2.5">
+          Tự động xác thực JWT qua API Gateway. Nạp tài khoản mẫu với <code>node scripts/seed-demo.js</code>.
         </p>
       </div>
 
-      <!-- Rider View Card -->
-      <div class="bg-slate-800/80 rounded-xl border border-slate-700 p-4 shadow-lg backdrop-blur">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-700">
-          <h2 class="font-bold text-emerald-400 flex items-center gap-2">
-            <span>👤</span> Rider View (Hành Khách)
+      <!-- Passenger Dispatch & Wallet Control -->
+      <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 shadow-sm">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Hành Khách (Rider View)
           </h2>
           <div class="text-xs text-slate-400">
-            Số dư ví: <span id="rider-balance" class="font-mono text-emerald-300 font-bold">0</span> đ
-            (<span id="rider-held" class="text-amber-400">0</span> đ tạm giữ)
+            Số dư: <span id="rider-balance" class="font-mono text-emerald-400 font-bold tabular-nums">0</span> đ
+            (<span id="rider-held" class="font-mono text-amber-400 tabular-nums">0</span> đ tạm giữ)
           </div>
         </div>
 
         <!-- Rider Profile Selector & Topup -->
-        <div class="mt-3 flex items-center justify-between gap-2">
-          <select id="rider-select" class="bg-slate-900 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 flex-1 focus:outline-none focus:border-emerald-500">
-            <option value="passenger-1">Khách 1 (Đủ tiền - 200,000 đ)</option>
+        <div class="mt-3 flex items-center gap-2">
+          <select id="rider-select" class="bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 flex-1 focus:outline-none focus:border-blue-500">
+            <option value="passenger-1">Khách 1 (Số dư 200,000 đ)</option>
             <option value="passenger-2">Khách 2 (Tranh chấp CT-01)</option>
-            <option value="passenger-zero">Khách 3 (0 đ - Test Saga Bù Trừ)</option>
+            <option value="passenger-zero">Khách 3 (0 đ - Test Bù Trừ Saga)</option>
           </select>
-          <button id="btn-topup" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-1.5 rounded font-medium transition active:scale-95">
+          <button id="btn-topup" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded font-medium transition active:scale-[0.98]">
             + Nạp 100k
           </button>
         </div>
 
         <!-- Booking Form -->
-        <div class="mt-4 space-y-3">
+        <div class="mt-3.5 space-y-2.5">
           <div>
-            <label class="text-xs text-slate-400 flex justify-between">
-              <span>📍 Điểm đón (Pickup):</span>
-              <span id="pickup-mode" class="text-emerald-400 cursor-pointer text-[10px]">Nhấp bản đồ để chọn</span>
-            </label>
-            <input id="pickup-address" type="text" value="Hồ Hoàn Kiếm, Hà Nội" class="w-full bg-slate-900 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 mt-1 focus:outline-none focus:border-emerald-500">
-            <div class="flex gap-2 text-[10px] text-slate-500 mt-0.5">
-              <span>Lat: <span id="pickup-lat">21.0285</span></span>
-              <span>Lon: <span id="pickup-lon">105.8544</span></span>
+            <div class="flex justify-between items-center text-xs text-slate-400">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/>
+                  <circle cx="12" cy="10" r="3"/>
+                </svg>
+                Điểm đón (Pickup):
+              </span>
+              <span id="pickup-mode" class="text-emerald-400 cursor-pointer text-[11px] hover:underline">Nhấp bản đồ để chọn</span>
+            </div>
+            <input id="pickup-address" type="text" value="Hồ Hoàn Kiếm, Hà Nội" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 mt-1 focus:outline-none focus:border-blue-500">
+            <div class="flex gap-3 text-[11px] font-mono text-slate-400 mt-0.5">
+              <span>Lat: <span id="pickup-lat" class="tabular-nums text-slate-300">21.0285</span></span>
+              <span>Lon: <span id="pickup-lon" class="tabular-nums text-slate-300">105.8544</span></span>
             </div>
           </div>
 
           <div>
-            <label class="text-xs text-slate-400 flex justify-between">
-              <span>🏁 Điểm đến (Dropoff):</span>
-              <span id="dropoff-mode" class="text-amber-400 cursor-pointer text-[10px]">Nhấp bản đồ để chọn</span>
-            </label>
-            <input id="dropoff-address" type="text" value="Cầu Giấy, Hà Nội" class="w-full bg-slate-900 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 mt-1 focus:outline-none focus:border-amber-500">
-            <div class="flex gap-2 text-[10px] text-slate-500 mt-0.5">
-              <span>Lat: <span id="dropoff-lat">21.0358</span></span>
-              <span>Lon: <span id="dropoff-lon">105.7950</span></span>
+            <div class="flex justify-between items-center text-xs text-slate-400">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+                Điểm đến (Dropoff):
+              </span>
+              <span id="dropoff-mode" class="text-amber-400 cursor-pointer text-[11px] hover:underline">Nhấp bản đồ để chọn</span>
+            </div>
+            <input id="dropoff-address" type="text" value="Cầu Giấy, Hà Nội" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 mt-1 focus:outline-none focus:border-blue-500">
+            <div class="flex gap-3 text-[11px] font-mono text-slate-400 mt-0.5">
+              <span>Lat: <span id="dropoff-lat" class="tabular-nums text-slate-300">21.0358</span></span>
+              <span>Lon: <span id="dropoff-lon" class="tabular-nums text-slate-300">105.7950</span></span>
             </div>
           </div>
 
-          <!-- Quick Actions -->
-          <div class="pt-2 flex flex-col gap-2">
-            <button id="btn-book-trip" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm py-2 rounded-lg font-bold shadow-md transition active:scale-95 flex items-center justify-center gap-1.5">
-              <span>🚗</span> Đặt Chuyến Đi (Book Ride)
+          <!-- Quick Dispatch Actions -->
+          <div class="pt-1.5 flex flex-col gap-2">
+            <button id="btn-book-trip" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2 rounded font-semibold shadow-sm transition active:scale-[0.98] flex items-center justify-center gap-2">
+              <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 18H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.19M15 6h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3.19"/>
+                <circle cx="7" cy="18" r="2"/>
+                <circle cx="17" cy="18" r="2"/>
+              </svg>
+              Đặt Chuyến Đi (Book Ride)
             </button>
             <div class="grid grid-cols-2 gap-2">
-              <button id="btn-demo-concurrency" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-1.5 px-2 rounded font-medium transition active:scale-95" title="Bắn 2 request đồng thời từ 2 khách tới cùng 1 tài xế">
-                ⚡ Đặt Tranh Chấp (CT-01)
+              <button id="btn-demo-concurrency" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-1.5 px-2 rounded font-medium transition border border-slate-700 active:scale-[0.98]" title="Bắn 2 request đồng thời từ 2 khách tới cùng 1 tài xế">
+                Tranh Chấp (CT-01)
               </button>
-              <button id="btn-demo-saga" class="bg-rose-600 hover:bg-rose-500 text-white text-xs py-1.5 px-2 rounded font-medium transition active:scale-95" title="Đặt xe với số dư ví = 0 để kích hoạt Saga Bù Trừ">
-                💥 Saga Bù Trừ (FR-02)
+              <button id="btn-demo-saga" class="bg-slate-800 hover:bg-slate-700 text-rose-300 text-xs py-1.5 px-2 rounded font-medium transition border border-slate-700 active:scale-[0.98]" title="Đặt xe với số dư ví = 0 để kích hoạt Saga Bù Trừ">
+                Saga Bù Trừ (FR-02)
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Active Trip Status Banner -->
-        <div id="trip-card" class="mt-4 p-3 bg-slate-900 rounded-lg border border-slate-700 text-xs hidden">
-          <div class="flex items-center justify-between pb-2 border-b border-slate-800">
-            <span class="text-slate-400">Trip ID: <span id="trip-id" class="font-mono text-slate-300">...</span></span>
-            <span id="trip-status" class="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30">REQUESTED</span>
+        <!-- Active Trip Status Panel (Flattened structural section) -->
+        <div id="trip-card" class="mt-3.5 pt-3 border-t border-slate-800 text-xs hidden">
+          <div class="flex items-center justify-between pb-2">
+            <span class="text-slate-400">Cuốc xe: <span id="trip-id" class="font-mono text-slate-200 font-medium">...</span></span>
+            <span id="trip-status" class="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30">REQUESTED</span>
           </div>
-          <div class="grid grid-cols-2 gap-2 mt-2 text-slate-300">
-            <div>Cước ước tính: <span id="trip-fare" class="font-bold text-emerald-400">45,000</span> đ</div>
-            <div>Tài xế: <span id="trip-driver" class="text-cyan-400">Đang tìm...</span></div>
+          <div class="grid grid-cols-2 gap-2 text-slate-300 my-1.5">
+            <div>Cước ước tính: <span id="trip-fare" class="font-mono font-bold text-emerald-400 tabular-nums">45,000</span> đ</div>
+            <div>Tài xế: <span id="trip-driver" class="text-sky-400 font-mono">Đang tìm...</span></div>
           </div>
-          <!-- Saga Progress Steps -->
-          <div class="mt-3 pt-2 border-t border-slate-800">
-            <div class="text-[10px] text-slate-400 mb-1">Tiến trình Giao dịch Phân tán (Saga):</div>
-            <div class="flex items-center justify-between text-[10px]">
-              <span id="step-1" class="text-slate-500">1. Tạo cuốc</span>
-              <span>→</span>
-              <span id="step-2" class="text-slate-500">2. Ghép xe</span>
-              <span>→</span>
-              <span id="step-3" class="text-slate-500">3. Giữ cước</span>
-              <span>→</span>
-              <span id="step-4" class="text-slate-500">4. Xác nhận</span>
+
+          <!-- Saga Stepper Timeline -->
+          <div class="mt-2.5 pt-2 border-t border-slate-800/80">
+            <div class="text-[10px] uppercase tracking-wider text-slate-400 mb-1.5">Tiến Trình Saga Phân Tán:</div>
+            <div class="grid grid-cols-4 gap-2 text-[11px] text-center font-mono">
+              <div id="step-1" class="text-slate-400 py-1 border-t-2 border-slate-800">1. Tạo cuốc</div>
+              <div id="step-2" class="text-slate-400 py-1 border-t-2 border-slate-800">2. Ghép xe</div>
+              <div id="step-3" class="text-slate-400 py-1 border-t-2 border-slate-800">3. Giữ tiền</div>
+              <div id="step-4" class="text-slate-400 py-1 border-t-2 border-slate-800">4. Xác nhận</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Driver View Card -->
-      <div class="bg-slate-800/80 rounded-xl border border-slate-700 p-4 shadow-lg backdrop-blur">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-700">
-          <h2 class="font-bold text-cyan-400 flex items-center gap-2">
-            <span>🚕</span> Driver View (Tài Xế)
+      <!-- Driver Console Card -->
+      <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 shadow-sm">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>
+              <circle cx="7" cy="17" r="2"/>
+              <circle cx="17" cy="17" r="2"/>
+            </svg>
+            Tài Xế (Driver Console)
           </h2>
-          <div class="flex items-center gap-2">
-            <span id="driver-status-badge" class="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">AVAILABLE</span>
+          <div>
+            <span id="driver-status-badge" class="px-2 py-0.5 rounded font-mono font-bold uppercase text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">AVAILABLE</span>
           </div>
         </div>
 
         <div class="mt-3 flex items-center justify-between text-xs">
           <div>
             <div class="font-bold text-slate-200">Nguyễn Văn Tài</div>
-            <div class="text-slate-400 text-[11px]">Biển số: <span class="font-mono text-slate-300">29A-888.88</span></div>
+            <div class="text-slate-400 text-[11px] mt-0.5">Biển số: <span class="font-mono text-slate-300">29A-888.88</span></div>
           </div>
-          <button id="btn-toggle-driver" class="bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs px-3 py-1.5 rounded transition font-medium">
+          <button id="btn-toggle-driver" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded transition font-medium border border-slate-700 active:scale-[0.98]">
             Tắt Hoạt Động
           </button>
         </div>
 
-        <!-- Driver actions when assigned -->
-        <div id="driver-actions-card" class="mt-3 p-3 bg-slate-900 rounded-lg border border-slate-700 text-xs hidden">
-          <div class="text-slate-300 font-medium pb-2 border-b border-slate-800">
-            🔔 Yêu cầu cuốc xe mới!
+        <!-- Driver Actions Triggered By Assignment -->
+        <div id="driver-actions-card" class="mt-3 pt-3 border-t border-slate-800 text-xs hidden">
+          <div class="text-slate-300 font-medium pb-2">
+            Yêu cầu cuốc xe mới được phân bổ:
           </div>
-          <div class="grid grid-cols-2 gap-2 mt-2">
-            <button id="btn-driver-accept" class="bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded font-bold">
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <button id="btn-driver-accept" class="bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded font-semibold transition active:scale-[0.98]">
               Nhận Cuốc (Accept)
             </button>
-            <button id="btn-driver-start" class="bg-cyan-600 hover:bg-cyan-500 text-white py-1.5 rounded font-bold hidden">
+            <button id="btn-driver-start" class="bg-sky-600 hover:bg-sky-500 text-white py-1.5 rounded font-semibold transition active:scale-[0.98] hidden">
               Bắt Đầu Đi (Start)
             </button>
-            <button id="btn-driver-complete" class="bg-purple-600 hover:bg-purple-500 text-white py-1.5 rounded font-bold hidden">
+            <button id="btn-driver-complete" class="bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded font-semibold transition active:scale-[0.98] hidden">
               Hoàn Tất & Trừ Tiền
             </button>
-            <button id="btn-cancel-trip" class="bg-rose-700 hover:bg-rose-600 text-white py-1.5 rounded font-bold">
+            <button id="btn-cancel-trip" class="bg-rose-600 hover:bg-rose-500 text-white py-1.5 rounded font-semibold transition active:scale-[0.98]">
               Huỷ Chuyến (Passenger)
             </button>
           </div>
-          <p class="text-[10px] text-slate-500 mt-2">Các nút trên gọi API thật bằng JWT và cập nhật trạng thái từ Trip Service.</p>
         </div>
       </div>
     </section>
 
-    <!-- Column 2: Leaflet Interactive Map - 5 cols -->
-    <section class="col-span-5 flex flex-col bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-      <div class="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between bg-slate-800">
-        <div class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-          <span>🗺️</span> Bản Đồ Trực Quan Thời Gian Thực (Hà Nội GPS)
+    <!-- Column 2: Geospatial Map View (5 cols) -->
+    <section class="col-span-5 flex flex-col bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-sm">
+      <div class="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+          <svg class="w-3.5 h-3.5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+            <line x1="8" y1="2" x2="8" y2="18"/>
+            <line x1="16" y1="6" x2="16" y2="22"/>
+          </svg>
+          Bản Đồ Điều Phối GPS (Hà Nội)
         </div>
-        <div class="text-[11px] text-slate-400 flex items-center gap-2">
-          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span> Đón
-          <span class="inline-block w-2 h-2 rounded-full bg-amber-400"></span> Đến
-          <span class="inline-block w-2 h-2 rounded-full bg-cyan-400"></span> Xe
+        <div class="text-[11px] font-mono text-slate-400 flex items-center gap-3">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Đón</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400"></span> Đến</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-400"></span> Tài xế</span>
         </div>
       </div>
-      <!-- Map Container -->
-      <div id="map" class="flex-1 w-full min-h-[450px]"></div>
+      <!-- Leaflet Map Container -->
+      <div id="map" class="flex-1 w-full min-h-[460px]"></div>
     </section>
 
-    <!-- Column 3: Distributed Logs & Tracing Stream - 3 cols -->
-    <section class="col-span-3 flex flex-col bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-      <div class="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between bg-slate-800">
-        <div class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-          <span>⚡</span> Live Distributed Tracing
+    <!-- Column 3: Live Distributed Tracing & Telemetry Stream (3 cols) -->
+    <section class="col-span-3 flex flex-col bg-slate-900 rounded-lg border border-slate-800 overflow-hidden shadow-sm">
+      <div class="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Live Distributed Tracing
         </div>
-        <button id="btn-clear-logs" class="text-[10px] text-slate-400 hover:text-slate-200">
+        <button id="btn-clear-logs" class="text-[11px] font-mono text-slate-400 hover:text-slate-200 transition">
           Xoá Logs
         </button>
       </div>
 
-      <!-- Log filter -->
-      <div class="p-2 border-b border-slate-700/60 bg-slate-900/40 flex gap-1">
-        <input id="log-filter" type="text" placeholder="Lọc theo Correlation-ID hoặc Service..." class="w-full bg-slate-950 text-[11px] text-slate-300 border border-slate-700 rounded px-2 py-1 focus:outline-none focus:border-amber-500">
+      <!-- Telemetry Search Filter -->
+      <div class="p-2 border-b border-slate-800 bg-slate-950/60">
+        <input id="log-filter" type="text" placeholder="Lọc theo Correlation-ID hoặc Service..." class="w-full bg-slate-900 text-xs text-slate-200 border border-slate-800 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-mono">
       </div>
 
-      <!-- Log messages console -->
+      <!-- Telemetry Stream Container -->
       <div id="logs-container" class="flex-1 p-2 space-y-2 overflow-y-auto font-mono text-[11px] max-h-[calc(100vh-160px)]">
-        <!-- Live logs injected here -->
-        <div class="text-slate-500 italic">Đang chờ sự kiện phân tán từ hệ thống...</div>
+        <div class="text-slate-400 italic p-2 text-center">Đang chờ sự kiện phân tán từ hệ thống...</div>
       </div>
     </section>
 
