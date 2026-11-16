@@ -392,7 +392,7 @@
             </svg>
             Đặt Chuyến Xe Mới
           </h2>
-          <span class="text-[11px] text-blue-400 font-mono">Hà Nội</span>
+          <span class="text-[11px] text-blue-400 font-mono">Việt Nam (Toàn Quốc)</span>
         </div>
 
         <!-- Pickup input -->
@@ -514,11 +514,24 @@
 
       <!-- Map Toolbar Overlay -->
       <div class="absolute top-3 left-3 z-[400] flex flex-wrap items-center gap-1.5 bg-slate-900/90 backdrop-blur-sm p-1.5 rounded-lg border border-slate-700/70 shadow-md">
-        <button id="btn-map-fit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2.5 py-1 rounded transition">
-          Căn Giữa Tuyến Đường
+        <button id="btn-map-fit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2.5 py-1 rounded transition" title="Căn giữa toàn bộ tuyến đường">
+          Căn Giữa Tuyến
         </button>
-        <button id="btn-map-reset-points" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2.5 py-1 rounded transition">
-          Đặt Lại Điểm
+        <button id="btn-map-reset-points" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded transition" title="Đặt lại điểm mẫu">
+          Đặt Lại
+        </button>
+        <div class="h-3 w-px bg-slate-700 mx-0.5"></div>
+        <button id="btn-jump-hanoi" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] px-2 py-1 rounded transition" title="Xem khu vực Hà Nội">
+          Hà Nội
+        </button>
+        <button id="btn-jump-danang" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] px-2 py-1 rounded transition" title="Xem khu vực Đà Nẵng">
+          Đà Nẵng
+        </button>
+        <button id="btn-jump-hcm" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] px-2 py-1 rounded transition" title="Xem khu vực TP. Hồ Chí Minh">
+          TP. HCM
+        </button>
+        <button id="btn-jump-country" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] px-2 py-1 rounded transition" title="Thu nhỏ toàn cảnh Việt Nam">
+          Toàn Quốc
         </button>
         <button id="btn-cancel-pick" class="hidden bg-red-900/60 hover:bg-red-800 text-red-200 text-[11px] px-2.5 py-1 rounded border border-red-700/60 transition">
           ✕ Hủy Chọn Điểm

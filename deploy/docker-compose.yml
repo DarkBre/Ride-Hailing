@@ -44,7 +44,7 @@ services:
     hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:-ds03_admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-ds03_adm_sec_e78491f6c6f80015990d67bd}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:?Vui lòng cấu hình RABBITMQ_ADMIN_PASSWORD trong tệp .env}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -77,7 +77,7 @@ services:
       PAYMENT_DB_NAME: ${PAYMENT_DB_NAME:-payment_db}
       POSTGRES_USER: payment_service
       PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_secret_password}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:-ds03_app_sec_e462e83947154b3a08e9abbb}@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:?Vui lòng cấu hình RABBITMQ_PASSWORD trong tệp .env}@rabbitmq:5672}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-trip.exchange}
       RABBITMQ_DLX: ${RABBITMQ_DLX:-trip.dlx}
       RABBITMQ_DLQ: ${RABBITMQ_DLQ:-trip.dlq}
@@ -106,7 +106,7 @@ services:
       INTERNAL_KEY: ${INTERNAL_KEY:-ds03-internal-secret-dev}
       PORT: 8006
       NOTIFICATION_SERVICE_PORT: 8006
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:-ds03_app_sec_e462e83947154b3a08e9abbb}@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:?Vui lòng cấu hình RABBITMQ_PASSWORD trong tệp .env}@rabbitmq:5672}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-trip.exchange}
       RABBITMQ_DLX: ${RABBITMQ_DLX:-trip.dlx}
       RABBITMQ_DLQ: ${RABBITMQ_DLQ:-trip.dlq}
@@ -247,7 +247,7 @@ services:
       POSTGRES_USER: matching_service
       POSTGRES_PASSWORD: ${MATCHING_DB_PASSWORD:-matching_secret_password}
       DRIVER_URL: http://driver:8002
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:-ds03_app_sec_e462e83947154b3a08e9abbb}@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:?Vui lòng cấu hình RABBITMQ_PASSWORD trong tệp .env}@rabbitmq:5672}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-trip.exchange}
       RABBITMQ_DLX: ${RABBITMQ_DLX:-trip.dlx}
       RABBITMQ_DLQ: ${RABBITMQ_DLQ:-trip.dlq}
@@ -291,7 +291,7 @@ services:
       GATEWAY_URL: http://gateway:8080
       MATCHING_RADIUS_KM: ${MATCHING_RADIUS_KM:-5}
       EVENT_TRANSPORT: rabbitmq
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:-ds03_app_sec_e462e83947154b3a08e9abbb}@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://${RABBITMQ_USER:-ds03_app}:${RABBITMQ_PASSWORD:?Vui lòng cấu hình RABBITMQ_PASSWORD trong tệp .env}@rabbitmq:5672}
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-trip.exchange}
       RABBITMQ_DLX: ${RABBITMQ_DLX:-trip.dlx}
       RABBITMQ_DLQ: ${RABBITMQ_DLQ:-trip.dlq}

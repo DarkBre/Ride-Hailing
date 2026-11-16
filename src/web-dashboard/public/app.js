@@ -362,12 +362,16 @@ function initPassengerMap() {
   passengerMap = L.map('passenger-map', {
     center: [21.0285, 105.8544],
     zoom: 13,
+    zoomControl: false,
     dragging: true,
     tap: true,
     touchZoom: true,
     scrollWheelZoom: true,
     doubleClickZoom: true,
   });
+
+  window.passengerMap = passengerMap;
+  L.control.zoom({ position: 'bottomleft' }).addTo(passengerMap);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
@@ -539,12 +543,16 @@ function initDriverMap() {
   driverMap = L.map('driver-map', {
     center: [state.driverCoords.lat, state.driverCoords.lon],
     zoom: 14,
+    zoomControl: false,
     dragging: true,
     tap: true,
     touchZoom: true,
     scrollWheelZoom: true,
     doubleClickZoom: true,
   });
+
+  window.driverMap = driverMap;
+  L.control.zoom({ position: 'bottomleft' }).addTo(driverMap);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
@@ -946,6 +954,7 @@ async function pollDriverActiveTrip() {
   if (res.ok && res.data && res.data.id) {
     const trip = res.data;
     state.driverActiveTrip = trip;
+    fetchDriverProfile();
 
     noTripEl?.classList.add('hidden');
     activeTripEl?.classList.remove('hidden');
@@ -991,10 +1000,14 @@ async function pollDriverActiveTrip() {
 
     renderDriverTripRoute(trip);
   } else {
+    const wasActive = state.driverActiveTrip !== null;
     state.driverActiveTrip = null;
     noTripEl?.classList.remove('hidden');
     activeTripEl?.classList.add('hidden');
     clearDriverTripRoute();
+    if (wasActive) {
+      fetchDriverProfile();
+    }
   }
 }
 
@@ -1539,6 +1552,35 @@ function bindEvents() {
     setPickupCoordinates(21.0285, 105.8544, 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội');
     setDropoffCoordinates(21.0173, 105.7839, 'Landmark 72, Nam Từ Liêm, Hà Nội');
     showToast('Đã đặt lại điểm mẫu mặc định', 'info');
+  });
+
+  // Quick Region / City Jump Navigation
+  document.getElementById('btn-jump-hanoi')?.addEventListener('click', () => {
+    if (passengerMap) {
+      passengerMap.setView([21.0285, 105.8544], 13);
+      showToast('Đã di chuyển bản đồ đến khu vực Hà Nội', 'info');
+    }
+  });
+
+  document.getElementById('btn-jump-danang')?.addEventListener('click', () => {
+    if (passengerMap) {
+      passengerMap.setView([16.0544, 108.2022], 13);
+      showToast('Đã di chuyển bản đồ đến khu vực Đà Nẵng', 'info');
+    }
+  });
+
+  document.getElementById('btn-jump-hcm')?.addEventListener('click', () => {
+    if (passengerMap) {
+      passengerMap.setView([10.7769, 106.7009], 13);
+      showToast('Đã di chuyển bản đồ đến TP. Hồ Chí Minh', 'info');
+    }
+  });
+
+  document.getElementById('btn-jump-country')?.addEventListener('click', () => {
+    if (passengerMap) {
+      passengerMap.setView([16.0471, 106.5], 6);
+      showToast('Đã mở rộng tầm nhìn toàn cảnh Việt Nam', 'info');
+    }
   });
 
   // Booking & Trip Actions

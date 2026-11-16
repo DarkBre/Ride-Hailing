@@ -54,6 +54,15 @@ const ACCOUNTS = [
     role: 'DRIVER',
     topup: 0,
   },
+  {
+    key: 'driver2',
+    email: 'driver2@demo.ds03',
+    password: 'Password123!',
+    name: 'Lê Văn Lái',
+    phone: '0900000005',
+    role: 'DRIVER',
+    topup: 0,
+  },
 ];
 
 async function request(pathname, { method = 'GET', body = null, token = null } = {}) {
@@ -126,12 +135,32 @@ async function topup(account) {
   console.log(`[seed] Đã nạp ${account.topup.toLocaleString('vi-VN')} đ cho ${account.email}`);
 }
 
+function getDockerCmd() {
+  const candidates = [
+    'docker',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe',
+  ];
+  for (const cmd of candidates) {
+    try {
+      execFileSync(cmd, ['--version'], { stdio: 'ignore' });
+      return cmd;
+    } catch (_) {}
+  }
+  return 'docker';
+}
+
 function seedDriverProfile(driver) {
+  if (!driver || !driver.user?.id) return;
+  const plate = driver.key === 'driver2' ? '29A-999.99' : '29A-888.88';
+  const model = driver.key === 'driver2' ? 'Hyundai Accent' : 'Toyota Vios';
+  const lat = driver.key === 'driver2' ? 21.0900 : 21.0285;
+  const lon = driver.key === 'driver2' ? 105.8200 : 105.8544;
+
   const sql = `
 INSERT INTO drivers (id, user_id, name, vehicle_plate, vehicle_model, latitude, longitude, status, version, location_updated_at, updated_at)
 VALUES (
-  '${randomUUID()}', '${driver.user.id}', '${driver.name.replace(/'/g, "''")}', '29A-888.88', 'Toyota Vios',
-  21.0285, 105.8544, 'AVAILABLE', 1, NOW(), NOW()
+  '${randomUUID()}', '${driver.user.id}', '${driver.name.replace(/'/g, "''")}', '${plate}', '${model}',
+  ${lat}, ${lon}, 'AVAILABLE', 1, NOW(), NOW()
 )
 ON CONFLICT (user_id) DO UPDATE SET
   name = EXCLUDED.name,
@@ -144,16 +173,27 @@ ON CONFLICT (user_id) DO UPDATE SET
   updated_at = NOW();`;
 
   try {
+    const envFile = path.join(__dirname, '..', '.env');
+    const dockerCmd = getDockerCmd();
     execFileSync(
-      'docker',
-      ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'postgres', 'psql', '-U', process.env.POSTGRES_USER || 'postgres', '-d', 'driver_db', '-v', 'ON_ERROR_STOP=1', '-c', sql],
+      dockerCmd,
+      ['compose', '--env-file', envFile, '-f', COMPOSE_FILE, 'exec', '-T', 'postgres', 'psql', '-U', process.env.POSTGRES_USER || 'postgres', '-d', 'driver_db', '-v', 'ON_ERROR_STOP=1', '-c', sql],
       { stdio: 'inherit' }
     );
-    console.log('[seed] Đã tạo/cập nhật hồ sơ Driver trong driver_db.');
+    console.log(`[seed] Đã tạo/cập nhật hồ sơ ${driver.name} (${driver.email}) trong driver_db.`);
   } catch (err) {
-    console.warn('[seed] Không thể seed Driver qua Docker (có thể Docker chưa chạy).');
-    console.warn('[seed] Chạy thủ công SQL sau trong postgres/driver_db:');
-    console.warn(sql);
+    console.warn(`[seed] Không thể seed Driver ${driver.email} qua Docker: ${err.message}`);
+  }
+}
+
+function cleanupLingeringTrips() {
+  try {
+    const dockerCmd = getDockerCmd();
+    const js = "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync('data/trip_db.sqlite'); db.exec(\"UPDATE trips SET status = 'CANCELLED' WHERE status NOT IN ('COMPLETED', 'CANCELLED');\");";
+    execFileSync(dockerCmd, ['exec', '-i', 'ds03-trip', 'node', '-e', js]);
+    console.log('[seed] Đã dọn dẹp các chuyến xe dở dang cũ trong ds03-trip.');
+  } catch (err) {
+    console.warn('[seed] Không thể dọn dẹp chuyến xe trong ds03-trip:', err.message);
   }
 }
 
@@ -161,6 +201,8 @@ async function main() {
   console.log('='.repeat(70));
   console.log(' DS03 DEMO SEED — Gateway:', GATEWAY_URL);
   console.log('='.repeat(70));
+
+  cleanupLingeringTrips();
 
   const accounts = [];
   for (const account of ACCOUNTS) {
@@ -171,8 +213,10 @@ async function main() {
     await topup(account);
   }
 
-  const driver = accounts.find((account) => account.key === 'driver1');
-  seedDriverProfile(driver);
+  const drivers = accounts.filter((account) => account.role === 'DRIVER');
+  for (const drv of drivers) {
+    seedDriverProfile(drv);
+  }
 
   console.log('\n[seed] Hoàn tất. Tài khoản demo:');
   for (const account of accounts) {

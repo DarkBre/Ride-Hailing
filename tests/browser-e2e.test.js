@@ -10,12 +10,65 @@
 const { chromium } = require('playwright');
 const path = require('node:path');
 const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:8080';
 const SCREENSHOTS_DIR = path.resolve(__dirname, '..', 'docs', 'screenshots');
+const DRIVER1_USER_ID = '1e6d0ff6-1aac-40da-8047-a6b12e6e3022';
 
 if (!fs.existsSync(SCREENSHOTS_DIR)) {
   fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+}
+
+function getDockerCmd() {
+  const candidates = [
+    'docker',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe',
+  ];
+  for (const cmd of candidates) {
+    try {
+      execFileSync(cmd, ['--version'], { stdio: 'ignore' });
+      return cmd;
+    } catch (_) {}
+  }
+  return 'docker';
+}
+
+function queryDriverDbStatus(userId) {
+  const dockerCmd = getDockerCmd();
+  const out = execFileSync(
+    dockerCmd,
+    ['exec', '-i', 'ds03-postgres', 'psql', '-U', 'postgres', '-d', 'driver_db', '-t', '-A', '-c', `SELECT status FROM drivers WHERE user_id = '${userId}';`],
+    { encoding: 'utf8' }
+  );
+  return out.trim();
+}
+
+async function getAuthToken(email, password) {
+  const res = await fetch(`${GATEWAY_URL}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const json = await res.json();
+  return json.data?.token;
+}
+
+async function queryDriverApiStatus(token) {
+  const res = await fetch(`${GATEWAY_URL}/api/v1/drivers/me`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+  const json = await res.json();
+  return json.data?.status || null;
+}
+
+function cleanupLingeringTrips() {
+  try {
+    const dockerCmd = getDockerCmd();
+    const js = "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync('data/trip_db.sqlite'); db.exec(\"UPDATE trips SET status = 'CANCELLED' WHERE status NOT IN ('COMPLETED', 'CANCELLED');\");";
+    execFileSync(dockerCmd, ['exec', '-i', 'ds03-trip', 'node', '-e', js], { stdio: 'ignore' });
+  } catch (_) {}
 }
 
 let browser = null;
@@ -34,6 +87,8 @@ async function runBrowserTests() {
   console.log(' Mục tiêu: Kiểm chứng luồng Người Dùng Thật qua Chromium & API Gateway Thật');
   console.log(` Base URL: ${BASE_URL}`);
   console.log('='.repeat(80));
+
+  cleanupLingeringTrips();
 
   browser = await chromium.launch({
     headless: true,
@@ -197,8 +252,8 @@ async function runBrowserTests() {
   await page.click('#btn-logout');
   await page.waitForSelector('#view-landing', { state: 'visible' });
 
-  // Test UI-02, UI-03, UI-04, UI-05: Map picking, polyline and fare calculation
-  const tMap = Date.now();
+  // Test UI-04A: Map Pan via Mouse (Kéo bản đồ tự do bằng chuột di chuyển tâm quan sát)
+  const tPan = Date.now();
   try {
     // Log back in as Passenger 1
     await page.click('#btn-landing-passenger');
@@ -218,15 +273,121 @@ async function runBrowserTests() {
       });
     }
     await page.waitForSelector('#passenger-booking-section:not(.hidden)', { timeout: 5000 });
+    await page.waitForFunction(
+      () => window.passengerMap !== undefined && typeof window.passengerMap.getCenter === 'function',
+      null,
+      { timeout: 8000 }
+    );
 
+    // Lấy toạ độ tâm ban đầu
+    const initialCenter = await page.evaluate(() => {
+      const c = window.passengerMap.getCenter();
+      return { lat: c.lat, lng: c.lng };
+    });
+
+    // Kéo chuột trên vùng trống của bản đồ
+    await page.mouse.move(600, 400);
+    await page.mouse.down();
+    await page.mouse.move(400, 300, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    const newCenter = await page.evaluate(() => {
+      const c = window.passengerMap.getCenter();
+      return { lat: c.lat, lng: c.lng };
+    });
+
+    const diffLat = Math.abs(newCenter.lat - initialCenter.lat);
+    const diffLng = Math.abs(newCenter.lng - initialCenter.lng);
+    if (diffLat > 0.001 || diffLng > 0.001) {
+      recordResult('UI-04A', 'Kéo bản đồ tự do bằng chuột di chuyển tâm quan sát toàn quốc', 'PASS', Date.now() - tPan, `Dịch chuyển: Δlat=${diffLat.toFixed(4)}, Δlng=${diffLng.toFixed(4)}`);
+    } else {
+      throw new Error(`Bản đồ không dịch chuyển khi kéo chuột: ban đầu (${initialCenter.lat}, ${initialCenter.lng}), sau kéo (${newCenter.lat}, ${newCenter.lng})`);
+    }
+  } catch (err) {
+    recordResult('UI-04A', 'Kéo bản đồ tự do bằng chuột', 'FAIL', Date.now() - tPan, err.message);
+  }
+
+  // Test UI-04B: City Jump Navigation to TP.HCM, picking outside Hanoi, Country View, Hanoi Return
+  const tJump = Date.now();
+  try {
+    // 1. Nhảy đến TP. Hồ Chí Minh
+    await page.click('#btn-jump-hcm');
+    await page.waitForTimeout(500);
+    const hcmCenter = await page.evaluate(() => window.passengerMap.getCenter());
+    if (Math.abs(hcmCenter.lat - 10.7769) > 0.1) {
+      throw new Error(`Tâm bản đồ không ở TP.HCM: lat=${hcmCenter.lat}`);
+    }
+
+    // 2. Click chọn điểm đón tại TP.HCM
+    await page.click('#btn-pick-pickup');
+    await page.click('#passenger-map', { position: { x: 500, y: 350 } });
+    await page.waitForTimeout(300);
+    const pickupLatHcm = parseFloat(await page.textContent('#text-pickup-lat'));
+    if (pickupLatHcm < 10.0 || pickupLatHcm > 11.5) {
+      throw new Error(`Điểm đón không thuộc toạ độ TP.HCM: lat=${pickupLatHcm}`);
+    }
+
+    // 3. Nhảy thu nhỏ Toàn Quốc
+    await page.click('#btn-jump-country');
+    await page.waitForTimeout(500);
+    const countryZoom = await page.evaluate(() => window.passengerMap.getZoom());
+    if (countryZoom > 7) {
+      throw new Error(`Mức zoom toàn quốc không đạt yêu cầu (<= 7): zoom=${countryZoom}`);
+    }
+
+    // 4. Nhảy trở lại Hà Nội
+    await page.click('#btn-jump-hanoi');
+    await page.waitForTimeout(500);
+    const hanoiCenter = await page.evaluate(() => window.passengerMap.getCenter());
+    if (Math.abs(hanoiCenter.lat - 21.0285) > 0.1) {
+      throw new Error(`Tâm bản đồ không trở về Hà Nội: lat=${hanoiCenter.lat}`);
+    }
+
+    recordResult('UI-04B', 'Điều hướng nhanh vùng miền (Hà Nội, Đà Nẵng, TP.HCM, Toàn Quốc) và chọn điểm ngoại tỉnh', 'PASS', Date.now() - tJump, `TP.HCM Lat=${pickupLatHcm}, Country Zoom=${countryZoom}`);
+  } catch (err) {
+    recordResult('UI-04B', 'Điều hướng nhanh vùng miền', 'FAIL', Date.now() - tJump, err.message);
+  }
+
+  // Test UI-04D: Pick Mode Banner, Cancel Button & Escape Key
+  const tCancel = Date.now();
+  try {
+    // Click chọn điểm đón -> banner hiển thị
+    await page.click('#btn-pick-pickup');
+    await page.waitForSelector('#pick-mode-banner:not(.hidden)', { timeout: 3000 });
+
+    // Bấm nút "✕ Hủy Chọn Điểm" -> banner ẩn
+    await page.click('#btn-cancel-pick');
+    await page.waitForTimeout(300);
+    const bannerHidden1 = await page.$eval('#pick-mode-banner', (el) => el.classList.contains('hidden'));
+    if (!bannerHidden1) throw new Error('Banner chọn điểm không ẩn sau khi bấm nút Hủy');
+
+    // Click chọn điểm đến -> banner hiển thị
+    await page.click('#btn-pick-dropoff');
+    await page.waitForSelector('#pick-mode-banner:not(.hidden)', { timeout: 3000 });
+
+    // Nhấn phím Escape -> banner ẩn
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    const bannerHidden2 = await page.$eval('#pick-mode-banner', (el) => el.classList.contains('hidden'));
+    if (!bannerHidden2) throw new Error('Banner chọn điểm không ẩn sau khi nhấn phím Escape');
+
+    recordResult('UI-04D', 'Hủy chế độ chọn điểm mượt mà qua nút Hủy trên thanh công cụ và phím Escape', 'PASS', Date.now() - tCancel);
+  } catch (err) {
+    recordResult('UI-04D', 'Hủy chế độ chọn điểm', 'FAIL', Date.now() - tCancel, err.message);
+  }
+
+  // Test UI-02, UI-03, UI-04, UI-05: Map picking, polyline and fare calculation
+  const tMap = Date.now();
+  try {
     // Click map pickup mode
     await page.click('#btn-pick-pickup');
-    await page.click('#passenger-map', { position: { x: 200, y: 200 } });
+    await page.click('#passenger-map', { position: { x: 300, y: 250 } });
     await page.waitForTimeout(300);
 
     // Click map dropoff mode
     await page.click('#btn-pick-dropoff');
-    await page.click('#passenger-map', { position: { x: 350, y: 300 } });
+    await page.click('#passenger-map', { position: { x: 450, y: 350 } });
     await page.waitForTimeout(300);
 
     const latVal = await page.textContent('#text-pickup-lat');
@@ -240,6 +401,38 @@ async function runBrowserTests() {
   } catch (err) {
     recordResult('UI-02', 'Bản đồ tương tác', 'FAIL', Date.now() - tMap, err.message);
   }
+
+  // Test UI-04C: Marker Dragging (Kéo thả trực tiếp marker đón)
+  const tDrag = Date.now();
+  try {
+    const initialLat = await page.textContent('#text-pickup-lat');
+    const markerEl = await page.waitForSelector('.marker-pickup', { timeout: 4000 });
+    const box = await markerEl.boundingBox();
+    if (!box) throw new Error('Không tìm thấy bounding box của .marker-pickup');
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 50, box.y + box.height / 2 + 50, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    const newLat = await page.textContent('#text-pickup-lat');
+    const newFare = await page.textContent('#fare-estimated-amount');
+
+    if (newLat !== initialLat) {
+      recordResult('UI-04C', 'Kéo thả trực tiếp marker điểm đón (Marker Drag) cập nhật toạ độ và giá cước tức thì', 'PASS', Date.now() - tDrag, `Lat: ${initialLat} -> ${newLat}, Cước mới: ${newFare} đ`);
+    } else {
+      throw new Error(`Toạ độ không đổi sau khi kéo marker: ${initialLat} vs ${newLat}`);
+    }
+  } catch (err) {
+    recordResult('UI-04C', 'Kéo thả marker điểm đón', 'FAIL', Date.now() - tDrag, err.message);
+  }
+
+  // Kiểm tra 3 tầng Driver ở Trạng thái 1: AVAILABLE (Khởi đầu)
+  const dbStatusInitial = queryDriverDbStatus(DRIVER1_USER_ID);
+  const driver1Token = await getAuthToken('driver1@demo.ds03', 'Password123!');
+  const apiStatusInitial = await queryDriverApiStatus(driver1Token);
+  console.log(`[3-TIER-DRV] State 1 (AVAILABLE): DB=${dbStatusInitial}, API=${apiStatusInitial}`);
 
   // Test UI-06: Passenger creates trip
   const tTrip = Date.now();
@@ -260,39 +453,110 @@ async function runBrowserTests() {
     recordResult('UI-06', 'Hành khách tạo cuốc xe', 'FAIL', Date.now() - tTrip, err.message);
   }
 
-  // Test UI-07 & UI-08: Driver handles trip via Driver Portal & Passenger tracks full lifecycle
+  // Test RBAC-01: Phân quyền ranh giới dữ liệu /trips/active
+  const tRbac = Date.now();
+  try {
+    const p1Token = await page.evaluate(() => localStorage.getItem('ds03_token'));
+    const p2Token = await getAuthToken('passenger2@demo.ds03', 'Password123!');
+    const d2Token = await getAuthToken('driver2@demo.ds03', 'Password123!');
+
+    // 1. Passenger 1 (chính chủ) xem chuyến active -> HTTP 200, có data.id === createdTripId
+    const resP1 = await fetch(`${GATEWAY_URL}/api/v1/trips/active`, {
+      headers: { 'Authorization': `Bearer ${p1Token}` },
+    });
+    const jsonP1 = await resP1.json();
+    if (resP1.status !== 200 || !jsonP1.data || jsonP1.data.id !== createdTripId) {
+      throw new Error(`Passenger 1 không lấy được chuyến active chính chủ: status=${resP1.status}`);
+    }
+
+    // 2. Passenger 2 (người khác) gọi /trips/active -> HTTP 200, data === null
+    const resP2 = await fetch(`${GATEWAY_URL}/api/v1/trips/active`, {
+      headers: { 'Authorization': `Bearer ${p2Token}` },
+    });
+    const jsonP2 = await resP2.json();
+    if (resP2.status !== 200 || jsonP2.data !== null) {
+      throw new Error(`Lỗ hổng RBAC: Passenger 2 thấy chuyến xe của Passenger 1! data=${JSON.stringify(jsonP2.data)}`);
+    }
+
+    // 3. Driver 2 (tài xế khác) gọi /trips/active -> HTTP 200, data === null
+    const resD2 = await fetch(`${GATEWAY_URL}/api/v1/trips/active`, {
+      headers: { 'Authorization': `Bearer ${d2Token}` },
+    });
+    const jsonD2 = await resD2.json();
+    if (resD2.status !== 200 || jsonD2.data !== null) {
+      throw new Error(`Lỗ hổng RBAC: Driver 2 thấy chuyến xe của Driver 1! data=${JSON.stringify(jsonD2.data)}`);
+    }
+
+    // 4. Request ẩn danh không có JWT -> HTTP 401 UNAUTHORIZED
+    const resAnon = await fetch(`${GATEWAY_URL}/api/v1/trips/active`);
+    if (resAnon.status !== 401) {
+      throw new Error(`Lỗ hổng RBAC: Request không token không bị từ chối 401! status=${resAnon.status}`);
+    }
+
+    recordResult('RBAC-01', 'Phân quyền ranh giới dữ liệu /trips/active: Chặn chéo tài khoản & bắt buộc JWT', 'PASS', Date.now() - tRbac, 'P1: OK, P2: null, D2: null, Anon: 401');
+  } catch (err) {
+    recordResult('RBAC-01', 'Phân quyền ranh giới dữ liệu /trips/active', 'FAIL', Date.now() - tRbac, err.message);
+  }
+
+  // Test UI-07, UI-08 & DRV-01: Driver handles trip via Driver Portal & 3-Tier Driver Status Verification
   const tDriverJourney = Date.now();
   let driverContext = null;
   let driverPage = null;
   try {
     // Wait for Matching and Payment Hold to assign and confirm trip
     let currentStatus = '';
+    let assignedTrip = null;
+    const p1Token = await page.evaluate(() => localStorage.getItem('ds03_token'));
+
     for (let i = 0; i < 20; i++) {
       currentStatus = (await page.textContent('#active-trip-status-badge') || '').trim();
-      if (['DRIVER_ASSIGNED', 'CONFIRMED'].includes(currentStatus)) break;
+      if (['DRIVER_ASSIGNED', 'CONFIRMED'].includes(currentStatus)) {
+        const tripRes = await fetch(`${GATEWAY_URL}/api/v1/trips/active`, {
+          headers: { 'Authorization': `Bearer ${p1Token}` },
+        });
+        const tripJson = await tripRes.json();
+        if (tripJson.data && (tripJson.data.driver_user_id || tripJson.data.driver_id)) {
+          assignedTrip = tripJson.data;
+          break;
+        }
+      }
       if (currentStatus.includes('CANCELLED')) {
         throw new Error(`Cuốc xe bị hủy ngoài ý muốn: ${currentStatus}`);
       }
       await page.waitForTimeout(1000);
     }
 
-    if (!['DRIVER_ASSIGNED', 'CONFIRMED'].includes(currentStatus)) {
+    if (!assignedTrip || (!assignedTrip.driver_user_id && !assignedTrip.driver_id)) {
       throw new Error(`Cuốc xe không đạt trạng thái DRIVER_ASSIGNED/CONFIRMED sau 20s (Hiện tại: ${currentStatus})`);
     }
 
-    // Open second page for Driver 1 in isolated browser context
+    const assignedDriverUserId = assignedTrip.driver_user_id || DRIVER1_USER_ID;
+    const assignedDriverEmail = assignedDriverUserId === DRIVER1_USER_ID ? 'driver1@demo.ds03' : 'driver2@demo.ds03';
+    const assignedDriverToken = await getAuthToken(assignedDriverEmail, 'Password123!');
+
+    console.log(`[TEST-LOG] Cuốc xe được điều phối cho tài xế: ${assignedDriverEmail} (ID: ${assignedDriverUserId})`);
+
+    // =========================================================================
+    // DRV-01 / State 2: RESERVED (Tài xế được điều phối, chờ tiếp nhận)
+    // =========================================================================
+    const dbStatus2 = queryDriverDbStatus(assignedDriverUserId);
+    const apiStatus2 = await queryDriverApiStatus(assignedDriverToken);
+
+    // Open second page for Assigned Driver in isolated browser context
     driverContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     driverPage = await driverContext.newPage();
     await driverPage.goto(`${BASE_URL}/login/driver`, { waitUntil: 'networkidle' });
-    await driverPage.fill('#driver-login-email', 'driver1@demo.ds03');
+    await driverPage.fill('#driver-login-email', assignedDriverEmail);
     await driverPage.fill('#driver-login-password', 'Password123!');
     await driverPage.click('#btn-submit-driver-login');
     await driverPage.waitForSelector('#view-driver-dashboard', { state: 'visible', timeout: 5000 });
 
-    // Verify driver status mapping is NOT OFFLINE (BUG-003 fix verification)
-    const driverStateText = await driverPage.textContent('#driver-status-text');
-    if (driverStateText.includes('OFFLINE')) {
-      throw new Error(`Lỗi BUG-003: Tài xế bị hiển thị nhầm thành OFFLINE khi được reserve: ${driverStateText}`);
+    const uiStatusText2 = await driverPage.textContent('#driver-status-text');
+    const toggleDisabled2 = await driverPage.$eval('#btn-toggle-driver-status', (btn) => btn.disabled);
+
+    console.log(`[3-TIER-DRV] State 2 (RESERVED): DB=${dbStatus2}, API=${apiStatus2}, UI="${uiStatusText2}", ToggleDisabled=${toggleDisabled2}`);
+    if (dbStatus2 !== 'RESERVED' || apiStatus2 !== 'RESERVED' || !uiStatusText2.includes('RESERVED') || !toggleDisabled2) {
+      throw new Error(`3-Tier check FAIL tại State 2 (RESERVED): DB=${dbStatus2}, API=${apiStatus2}, UI=${uiStatusText2}, Disabled=${toggleDisabled2}`);
     }
 
     // Wait for active trip to appear on Driver Dashboard
@@ -305,6 +569,20 @@ async function runBrowserTests() {
     await driverPage.waitForSelector('#btn-driver-accept:not(.hidden)', { timeout: 6000 });
     await driverPage.click('#btn-driver-accept');
     await driverPage.waitForSelector('#btn-driver-start:not(.hidden)', { timeout: 6000 });
+
+    // =========================================================================
+    // DRV-01 / State 3: BUSY (Tài xế đã tiếp nhận chuyến đi, đang phục vụ)
+    // =========================================================================
+    await driverPage.waitForTimeout(600);
+    const dbStatus3 = queryDriverDbStatus(assignedDriverUserId);
+    const apiStatus3 = await queryDriverApiStatus(assignedDriverToken);
+    const uiStatusText3 = await driverPage.textContent('#driver-status-text');
+    const toggleDisabled3 = await driverPage.$eval('#btn-toggle-driver-status', (btn) => btn.disabled);
+
+    console.log(`[3-TIER-DRV] State 3 (BUSY): DB=${dbStatus3}, API=${apiStatus3}, UI="${uiStatusText3}", ToggleDisabled=${toggleDisabled3}`);
+    if (dbStatus3 !== 'BUSY' || apiStatus3 !== 'BUSY' || !uiStatusText3.includes('BUSY') || !toggleDisabled3) {
+      throw new Error(`3-Tier check FAIL tại State 3 (BUSY): DB=${dbStatus3}, API=${apiStatus3}, UI=${uiStatusText3}, Disabled=${toggleDisabled3}`);
+    }
 
     // Verify Passenger sees ACCEPTED
     console.log('[STEP] Waiting for passenger to see ACCEPTED...');
@@ -345,11 +623,27 @@ async function runBrowserTests() {
       return (noTripEl && !noTripEl.classList.contains('hidden')) || (activeTripEl && activeTripEl.classList.contains('hidden'));
     }, null, { timeout: 10000 });
 
+    // =========================================================================
+    // DRV-01 / State 4: AVAILABLE (Hoàn tất cuốc xe, trở lại sẵn sàng nhận chuyến)
+    // =========================================================================
+    await driverPage.waitForTimeout(1000);
+    const dbStatus4 = queryDriverDbStatus(assignedDriverUserId);
+    const apiStatus4 = await queryDriverApiStatus(assignedDriverToken);
+    const uiStatusText4 = await driverPage.textContent('#driver-status-text');
+    const toggleDisabled4 = await driverPage.$eval('#btn-toggle-driver-status', (btn) => btn.disabled);
+
+    console.log(`[3-TIER-DRV] State 4 (AVAILABLE): DB=${dbStatus4}, API=${apiStatus4}, UI="${uiStatusText4}", ToggleDisabled=${toggleDisabled4}`);
+    if (dbStatus4 !== 'AVAILABLE' || apiStatus4 !== 'AVAILABLE' || !uiStatusText4.includes('AVAILABLE') || toggleDisabled4) {
+      throw new Error(`3-Tier check FAIL tại State 4 (AVAILABLE): DB=${dbStatus4}, API=${apiStatus4}, UI=${uiStatusText4}, Disabled=${toggleDisabled4}`);
+    }
+
+    recordResult('DRV-01', 'Xác thực đồng bộ 3 tầng trạng thái Driver (DB PostgreSQL, API Gateway, Dashboard UI) qua 4 trạng thái', 'PASS', Date.now() - tDriverJourney, 'AVAILABLE -> RESERVED -> BUSY -> AVAILABLE đồng bộ 100%');
     recordResult('UI-07', 'Tài xế tiếp nhận cuốc xe, bắt đầu và hoàn tất trọn vẹn qua Cổng Tài Xế', 'PASS', Date.now() - tDriverJourney, 'Accept -> Start -> Complete luồng thật');
     recordResult('UI-08', 'Cập nhật trạng thái vòng đời cuốc xe (Saga Stepper) thời gian thực không lỗi', 'PASS', Date.now() - tDriverJourney, 'REQUESTED -> CONFIRMED -> ACCEPTED -> IN_PROGRESS -> COMPLETED');
 
     await driverPage.screenshot({ path: path.join(SCREENSHOTS_DIR, '04-driver-dashboard.png') });
   } catch (err) {
+    recordResult('DRV-01', 'Xác thực đồng bộ 3 tầng trạng thái Driver', 'FAIL', Date.now() - tDriverJourney, err.message);
     recordResult('UI-07', 'Tài xế tiếp nhận và hoàn tất cuốc xe qua UI', 'FAIL', Date.now() - tDriverJourney, err.message);
     recordResult('UI-08', 'Cập nhật trạng thái vòng đời cuốc xe', 'FAIL', Date.now() - tDriverJourney, err.message);
   } finally {
