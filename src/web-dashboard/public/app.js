@@ -378,71 +378,171 @@ function initPassengerMap() {
     maxZoom: 18,
   }).addTo(passengerMap);
 
-  // Click on map to pick location
+  // Default mode: Pan (Kéo bản đồ tự do - MẶC ĐỊNH)
+  state.mapInteractionMode = 'pan';
+
+  // Mouse cursor during dragging
+  passengerMap.on('dragstart', () => {
+    if (state.mapInteractionMode === 'pan') {
+      const mapContainer = document.getElementById('passenger-map');
+      if (mapContainer) mapContainer.style.cursor = 'grabbing';
+    }
+  });
+
+  passengerMap.on('dragend', () => {
+    if (state.mapInteractionMode === 'pan') {
+      const mapContainer = document.getElementById('passenger-map');
+      if (mapContainer) mapContainer.style.cursor = 'grab';
+    }
+  });
+
+  // Map Click Handling: TÁCH BIỆT HOÀN TOÀN KÉO BẢN ĐỒ VÀ GHIM ĐIỂM
   passengerMap.on('click', (e) => {
+    // KHI Ở CHẾ ĐỘ 'pan' (KÉO BẢN ĐỒ TỰ DO):
+    // TUYỆT ĐỐI KHÔNG MỞ POPUP! Người dùng tự do kéo lướt, click không bị phiền!
+    if (!state.mapInteractionMode || state.mapInteractionMode === 'pan') {
+      return;
+    }
+
     const { lat, lng } = e.latlng;
     const roundedLat = Math.round(lat * 10000) / 10000;
     const roundedLng = Math.round(lng * 10000) / 10000;
 
-    if (state.mapPickMode === 'pickup') {
+    if (state.mapInteractionMode === 'pickup') {
       setPickupCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
-      cancelMapPickMode();
+      setMapInteractionMode('pan');
       showToast(`Đã chọn điểm đón tại (${roundedLat}, ${roundedLng})`, 'success');
       return;
-    } else if (state.mapPickMode === 'dropoff') {
+    } else if (state.mapInteractionMode === 'dropoff') {
       setDropoffCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
-      cancelMapPickMode();
+      setMapInteractionMode('pan');
       showToast(`Đã chọn điểm đến tại (${roundedLat}, ${roundedLng})`, 'success');
       return;
+    } else if (state.mapInteractionMode === 'pin') {
+      // Chỉ khi người dùng chủ động bật chế độ Ghim Điểm
+      openPinSelectionPopup(e.latlng, roundedLat, roundedLng);
     }
+  });
 
-    // Google Maps Style Free Map Click: Contextual Popup
-    const popupContent = document.createElement('div');
-    popupContent.className = 'p-1 text-slate-800 text-xs';
-    popupContent.innerHTML = `
-      <div class="font-bold mb-1 text-slate-900 flex items-center gap-1">
-        <svg class="w-3.5 h-3.5 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
-        <span>Toạ độ: ${roundedLat}, ${roundedLng}</span>
-      </div>
-      <div class="text-[11px] text-slate-500 mb-2">Chọn ghim vị trí này cho chuyến đi của bạn:</div>
-      <div class="flex flex-col gap-1.5">
-        <button id="btn-popup-set-pickup" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
-          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
-          <span>Đặt làm Điểm Đón</span>
-        </button>
-        <button id="btn-popup-set-dropoff" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
-          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
-          <span>Đặt làm Điểm Đến</span>
-        </button>
-      </div>
-    `;
-
-    L.popup({ minWidth: 180, closeButton: true })
-      .setLatLng(e.latlng)
-      .setContent(popupContent)
-      .openOn(passengerMap);
-
-    popupContent.querySelector('#btn-popup-set-pickup')?.addEventListener('click', () => {
-      setPickupCoordinates(roundedLat, roundedLng, `Ghim bản đồ (${roundedLat}, ${roundedLng})`);
-      passengerMap.closePopup();
-      showToast(`Đã đặt Điểm Đón tại (${roundedLat}, ${roundedLng})`, 'success');
-    });
-
-    popupContent.querySelector('#btn-popup-set-dropoff')?.addEventListener('click', () => {
-      setDropoffCoordinates(roundedLat, roundedLng, `Ghim bản đồ (${roundedLat}, ${roundedLng})`);
-      passengerMap.closePopup();
-      showToast(`Đã đặt Điểm Đến tại (${roundedLat}, ${roundedLng})`, 'success');
-    });
+  // Chuột phải (Contextmenu) kiểu Google Maps: Nhấp chuột phải tại điểm bất kỳ để ghim nhanh mà không bị nhầm với kéo chuột trái
+  passengerMap.on('contextmenu', (e) => {
+    const { lat, lng } = e.latlng;
+    const roundedLat = Math.round(lat * 10000) / 10000;
+    const roundedLng = Math.round(lng * 10000) / 10000;
+    openPinSelectionPopup(e.latlng, roundedLat, roundedLng);
   });
 
   renderPassengerMapMarkers();
 }
 
+// Open Pin Dropdown Popup
+function openPinSelectionPopup(latlng, roundedLat, roundedLng) {
+  const popupContent = document.createElement('div');
+  popupContent.className = 'p-1 text-slate-800 text-xs';
+  popupContent.innerHTML = `
+    <div class="font-bold mb-1 text-slate-900 flex items-center gap-1">
+      <svg class="w-3.5 h-3.5 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+      <span>Toạ độ: ${roundedLat}, ${roundedLng}</span>
+    </div>
+    <div class="text-[11px] text-slate-500 mb-2">Chọn ghim vị trí này cho chuyến đi của bạn:</div>
+    <div class="flex flex-col gap-1.5">
+      <button id="btn-popup-set-pickup" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span>Đặt làm Điểm Đón</span>
+      </button>
+      <button id="btn-popup-set-dropoff" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+        <span>Đặt làm Điểm Đến</span>
+      </button>
+    </div>
+  `;
+
+  L.popup({ minWidth: 180, closeButton: true })
+    .setLatLng(latlng)
+    .setContent(popupContent)
+    .openOn(passengerMap);
+
+  popupContent.querySelector('#btn-popup-set-pickup')?.addEventListener('click', () => {
+    setPickupCoordinates(roundedLat, roundedLng, `Ghim bản đồ (${roundedLat}, ${roundedLng})`);
+    passengerMap.closePopup();
+    setMapInteractionMode('pan');
+    showToast(`Đã đặt Điểm Đón tại (${roundedLat}, ${roundedLng})`, 'success');
+  });
+
+  popupContent.querySelector('#btn-popup-set-dropoff')?.addEventListener('click', () => {
+    setDropoffCoordinates(roundedLat, roundedLng, `Ghim bản đồ (${roundedLat}, ${roundedLng})`);
+    passengerMap.closePopup();
+    setMapInteractionMode('pan');
+    showToast(`Đã đặt Điểm Đến tại (${roundedLat}, ${roundedLng})`, 'success');
+  });
+}
+
+// Map Interaction Modes: 'pan' (default - dragging only, no popups) vs 'pin' (explicit pin dropping)
+function setMapInteractionMode(mode) {
+  state.mapInteractionMode = mode; // 'pan' | 'pin' | 'pickup' | 'dropoff'
+  state.mapPickMode = (mode === 'pickup' || mode === 'dropoff') ? mode : null;
+
+  const btnPan = document.getElementById('btn-mode-pan');
+  const btnPin = document.getElementById('btn-mode-pin');
+  const banner = document.getElementById('pick-mode-banner');
+  const bannerText = document.getElementById('pick-mode-text');
+  const cancelBtn = document.getElementById('btn-cancel-pick');
+  const mapContainer = document.getElementById('passenger-map');
+
+  if (mode === 'pan') {
+    if (btnPan) {
+      btnPan.className = 'bg-blue-600 text-white font-medium px-2 py-1 rounded transition flex items-center gap-1 shadow-sm';
+    }
+    if (btnPin) {
+      btnPin.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
+    }
+    if (mapContainer) mapContainer.style.cursor = 'grab';
+    document.body.style.cursor = 'default';
+    if (banner) banner.classList.add('hidden');
+    if (cancelBtn) cancelBtn.classList.add('hidden');
+    if (passengerMap) passengerMap.closePopup();
+  } else if (mode === 'pin') {
+    if (btnPan) {
+      btnPan.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
+    }
+    if (btnPin) {
+      btnPin.className = 'bg-emerald-600 text-white font-medium px-2 py-1 rounded transition flex items-center gap-1 shadow-sm ring-1 ring-emerald-400';
+    }
+    if (mapContainer) mapContainer.style.cursor = 'crosshair';
+    document.body.style.cursor = 'crosshair';
+    if (banner) {
+      banner.classList.remove('hidden');
+      if (bannerText) bannerText.textContent = '🎯 Chế độ Ghim Điểm: Nhấp vào bản đồ để chọn Điểm Đón hoặc Điểm Đến';
+    }
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+    showToast('Chế độ Ghim Điểm: Nhấp vị trí bất kỳ trên bản đồ để chọn điểm đón/đến', 'info');
+  } else if (mode === 'pickup') {
+    if (btnPan) btnPan.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
+    if (btnPin) btnPin.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
+    if (mapContainer) mapContainer.style.cursor = 'crosshair';
+    document.body.style.cursor = 'crosshair';
+    if (banner) {
+      banner.classList.remove('hidden');
+      if (bannerText) bannerText.textContent = '📍 Click lên bản đồ để chọn Điểm Đón';
+    }
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+    showToast('Hãy nhấp vào bản đồ để chọn điểm đón...', 'info');
+  } else if (mode === 'dropoff') {
+    if (btnPan) btnPan.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
+    if (btnPin) btnPin.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
+    if (mapContainer) mapContainer.style.cursor = 'crosshair';
+    document.body.style.cursor = 'crosshair';
+    if (banner) {
+      banner.classList.remove('hidden');
+      if (bannerText) bannerText.textContent = '🏁 Click lên bản đồ để chọn Điểm Đến';
+    }
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+    showToast('Hãy nhấp vào bản đồ để chọn điểm đến...', 'info');
+  }
+}
+
 function cancelMapPickMode() {
-  state.mapPickMode = null;
-  document.body.style.cursor = 'default';
-  document.getElementById('pick-mode-banner')?.classList.add('hidden');
-  document.getElementById('btn-cancel-pick')?.classList.add('hidden');
+  setMapInteractionMode('pan');
 }
 
 function renderPassengerMapMarkers() {
@@ -1834,34 +1934,32 @@ function bindEvents() {
   document.getElementById('form-driver-login')?.addEventListener('submit', handleDriverLogin);
   document.getElementById('form-driver-register')?.addEventListener('submit', handleDriverRegister);
 
-  // Map Pick Controls (Passenger)
+  // Map Interaction Mode Switcher (Kéo Bản Đồ vs Ghim Điểm)
+  document.getElementById('btn-mode-pan')?.addEventListener('click', () => {
+    setMapInteractionMode('pan');
+    showToast('Đang ở chế độ Kéo bản đồ tự do', 'info');
+  });
+
+  document.getElementById('btn-mode-pin')?.addEventListener('click', () => {
+    if (state.mapInteractionMode === 'pin') {
+      setMapInteractionMode('pan');
+    } else {
+      setMapInteractionMode('pin');
+    }
+  });
+
+  // Map Pick Controls (Passenger Form)
   document.getElementById('btn-pick-pickup')?.addEventListener('click', () => {
-    state.mapPickMode = 'pickup';
-    document.body.style.cursor = 'crosshair';
-    const banner = document.getElementById('pick-mode-banner');
-    const bannerText = document.getElementById('pick-mode-text');
-    const cancelBtn = document.getElementById('btn-cancel-pick');
-    if (banner) banner.classList.remove('hidden');
-    if (bannerText) bannerText.textContent = 'Click lên bản đồ để chọn điểm đón';
-    if (cancelBtn) cancelBtn.classList.remove('hidden');
-    showToast('Hãy nhấp vào bản đồ để chọn điểm đón...', 'info');
+    setMapInteractionMode('pickup');
   });
 
   document.getElementById('btn-pick-dropoff')?.addEventListener('click', () => {
-    state.mapPickMode = 'dropoff';
-    document.body.style.cursor = 'crosshair';
-    const banner = document.getElementById('pick-mode-banner');
-    const bannerText = document.getElementById('pick-mode-text');
-    const cancelBtn = document.getElementById('btn-cancel-pick');
-    if (banner) banner.classList.remove('hidden');
-    if (bannerText) bannerText.textContent = 'Click lên bản đồ để chọn điểm đến';
-    if (cancelBtn) cancelBtn.classList.remove('hidden');
-    showToast('Hãy nhấp vào bản đồ để chọn điểm đến...', 'info');
+    setMapInteractionMode('dropoff');
   });
 
   document.getElementById('btn-cancel-pick')?.addEventListener('click', () => {
     cancelMapPickMode();
-    showToast('Đã hủy chế độ chọn điểm', 'info');
+    showToast('Đã quay lại chế độ Kéo bản đồ tự do', 'info');
   });
 
   document.getElementById('btn-map-fit')?.addEventListener('click', () => {

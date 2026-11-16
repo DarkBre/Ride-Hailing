@@ -528,6 +528,18 @@
 
       <!-- Google Maps Floating Controls (Top Right) -->
       <div class="absolute top-3 right-3 z-[500] pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 bg-slate-900/95 backdrop-blur-md p-1 rounded-lg border border-slate-700/80 shadow-xl max-w-[calc(100%-260px)]">
+        <!-- Segmented Mode Switcher: Kéo Bản Đồ vs Ghim Điểm Tự Do -->
+        <div class="flex items-center bg-slate-950/90 p-0.5 rounded-md border border-slate-700/80 text-[11px] mr-0.5">
+          <button id="btn-mode-pan" class="bg-blue-600 text-white font-medium px-2 py-1 rounded transition flex items-center gap-1 shadow-sm" title="Chế độ Kéo bản đồ tự do (Mặc định - Click không nhảy popup)">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0m-4 0V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v7M6 14v-2a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6a8 8 0 0 0 8 8h2a8 8 0 0 0 8-8V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v5"/></svg>
+            <span>Kéo Bản Đồ</span>
+          </button>
+          <button id="btn-mode-pin" class="text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1" title="Chế độ Nhấp tự do chọn điểm đón/đến">
+            <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>Ghim Điểm</span>
+          </button>
+        </div>
+
         <button id="btn-map-my-location" class="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 rounded transition" title="📍 Vị trí hiện tại của tôi (GPS)">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="2" y1="12" x2="4" y2="12"/></svg>
         </button>
@@ -558,15 +570,15 @@
           <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           <span>Live Distribution</span>
         </button>
-        <button id="btn-cancel-pick" class="hidden bg-red-900/60 hover:bg-red-800 text-red-200 text-[11px] px-2.5 py-1 rounded border border-red-700/60 transition">
-          ✕ Hủy Chọn Điểm
-        </button>
       </div>
 
-      <!-- Pick Mode Instruction Banner -->
-      <div id="pick-mode-banner" class="hidden absolute top-3 right-3 z-[400] bg-blue-600/95 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg border border-blue-400/30 flex items-center gap-1.5">
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
-        <span id="pick-mode-text">Click lên bản đồ để chọn vị trí</span>
+      <!-- Pick Mode Instruction Banner (Centered Top) -->
+      <div id="pick-mode-banner" class="hidden absolute top-14 left-1/2 -translate-x-1/2 z-[650] bg-slate-900/95 backdrop-blur-md text-slate-100 text-xs px-3.5 py-2 rounded-xl shadow-2xl border border-emerald-500/50 flex items-center gap-2 max-w-md pointer-events-auto">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+        <span id="pick-mode-text" class="font-medium text-emerald-300">🎯 Nhấp lên bản đồ để đặt Điểm Đón hoặc Điểm Đến</span>
+        <button id="btn-cancel-pick" class="ml-2 bg-red-900/70 hover:bg-red-800 text-red-200 text-[10px] px-2 py-0.5 rounded border border-red-700/60 transition">
+          ✕ Hủy (Esc)
+        </button>
       </div>
 
       <!-- Map Legend Overlay -->

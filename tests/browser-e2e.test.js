@@ -279,6 +279,16 @@ async function runBrowserTests() {
       { timeout: 8000 }
     );
 
+    // Xác nhận bản đồ mặc định ở chế độ Kéo bản đồ tự do (Pan Mode)
+    const isPanActive = await page.$eval('#btn-mode-pan', (el) => el.classList.contains('bg-blue-600'));
+    if (!isPanActive) throw new Error('Bản đồ không mặc định ở chế độ Kéo bản đồ tự do');
+
+    // Click thử trên bản đồ ở chế độ Kéo: Tuyệt đối KHÔNG được mở popup!
+    await page.click('#passenger-map', { position: { x: 500, y: 350 } });
+    await page.waitForTimeout(200);
+    const popupInPan = await page.isVisible('.leaflet-popup');
+    if (popupInPan) throw new Error('Chế độ Kéo bản đồ tự do bị lẫn với Ghim điểm (tự động bật popup không mong muốn)');
+
     // Lấy toạ độ tâm ban đầu
     const initialCenter = await page.evaluate(() => {
       const c = window.passengerMap.getCenter();
@@ -501,27 +511,36 @@ async function runBrowserTests() {
     recordResult('UI-04F', 'Điều khiển bản đồ nâng cao', 'FAIL', Date.now() - tControls, err.message);
   }
 
-  // Test UI-04G: Google Maps Free Map Click (Nhấp tự do mở popup chọn điểm trực tiếp)
+  // Test UI-04G: Tách biệt rõ ràng chức năng Ghim Điểm và Kéo Bản Đồ tự do
   const tFreeClick = Date.now();
   try {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(200);
 
-    // Click tự do trên bản đồ
+    // 1. Chuyển sang chế độ Ghim Điểm bằng nút công cụ
+    await page.click('#btn-mode-pin');
+    await page.waitForTimeout(300);
+
+    // 2. Click trên bản đồ ở chế độ Ghim Điểm -> popup phải xuất hiện
     await page.click('#passenger-map', { position: { x: 380, y: 260 } });
     await page.waitForSelector('.leaflet-popup', { timeout: 3000 });
     const hasPickupBtn = await page.isVisible('#btn-popup-set-pickup');
     const hasDropoffBtn = await page.isVisible('#btn-popup-set-dropoff');
     if (!hasPickupBtn || !hasDropoffBtn) throw new Error('Popup không hiển thị đủ nút Đặt Điểm Đón / Điểm Đến');
 
-    // Bấm chọn điểm đón từ popup tự do
+    // 3. Bấm chọn điểm đón từ popup
     await page.click('#btn-popup-set-pickup');
     await page.waitForTimeout(400);
 
     const freeClickLat = await page.textContent('#text-pickup-lat');
-    recordResult('UI-04G', 'Nhấp tự do trên bản đồ kiểu Google Maps (Free Click) mở popup đặt điểm đón/đến trực tiếp không cần bật chế độ trước', 'PASS', Date.now() - tFreeClick, `Toạ độ đón mới: ${freeClickLat}`);
+
+    // 4. Xác nhận sau khi chọn điểm, hệ thống tự động đưa về chế độ Kéo bản đồ (Pan) an toàn
+    const returnedToPan = await page.$eval('#btn-mode-pan', (el) => el.classList.contains('bg-blue-600'));
+    if (!returnedToPan) throw new Error('Hệ thống không tự động đưa về chế độ Kéo bản đồ sau khi chọn điểm');
+
+    recordResult('UI-04G', 'Tách biệt rõ ràng 2 tính năng: Kéo bản đồ tự do (không bị popup che) và Chế độ Ghim Điểm chủ động', 'PASS', Date.now() - tFreeClick, `Toạ độ đón mới: ${freeClickLat}`);
   } catch (err) {
-    recordResult('UI-04G', 'Nhấp tự do trên bản đồ kiểu Google Maps', 'FAIL', Date.now() - tFreeClick, err.message);
+    recordResult('UI-04G', 'Tách biệt Kéo bản đồ và Ghim điểm', 'FAIL', Date.now() - tFreeClick, err.message);
   }
 
   // Khôi phục điểm mẫu mặc định tại Hà Nội cho các bước tạo cuốc UI-06 tiếp theo
