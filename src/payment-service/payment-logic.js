@@ -450,8 +450,22 @@ async function processRefund(client, envelope) {
     );
   }
 
+  // Ghi nhận sự kiện payment.event.refund_success vào Transactional Outbox (Khép kín vòng đời Saga bù trừ)
+  await insertOutboxEvent(client, {
+    aggregateType: 'PAYMENT',
+    aggregateId: tripId,
+    eventType: 'payment.event.refund_success',
+    payload: {
+      trip_id: tripId,
+      passenger_id: userId,
+      amount,
+      status: 'REFUNDED',
+    },
+    correlationId: correlation_id,
+  });
+
   console.log(
-    `[${new Date().toISOString()}] [${correlation_id}] [payment-service] [INFO] Saga Refund/Compensation SUCCESS: Released ${amount} VND back to user ${userId} for trip ${tripId}`
+    `[${new Date().toISOString()}] [${correlation_id}] [payment-service] [INFO] Saga Refund/Compensation SUCCESS: Released ${amount} VND back to user ${userId} for trip ${tripId} and queued refund_success outbox event`
   );
 
   return { refunded: true, amount };

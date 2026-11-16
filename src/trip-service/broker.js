@@ -8,6 +8,7 @@ const TRIP_SUBSCRIPTIONS = [
   'trip.event.matching_failed',
   'payment.event.hold_success',
   'payment.event.hold_failed',
+  'payment.event.refund_success',
 ];
 
 class TripBroker {

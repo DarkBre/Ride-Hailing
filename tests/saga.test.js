@@ -558,6 +558,23 @@ async function runTests() {
       assert(releaseDriver, 'Phải có sự kiện bù trừ giải phóng tài xế');
       assert(releasePayment, 'Phải có sự kiện bù trừ hoàn tiền');
       assert.strictEqual(JSON.parse(releaseDriver.payload).driver_id, 'driver_race_01');
+
+      // 3. Phản hồi payment.event.refund_success từ Payment Service -> Saga chuyển sang COMPENSATED
+      const resRefundSuccess = await makeRequest({
+        method: 'POST',
+        path: '/internal/events',
+        headers: INTERNAL_HEADERS,
+        body: {
+          event_id: 'evt_race_refund_success_001',
+          event_type: 'payment.event.refund_success',
+          payload: { trip_id: raceTripId, amount: 45000, status: 'REFUNDED' },
+        },
+      });
+      assert.strictEqual(resRefundSuccess.status, 200);
+      assert.strictEqual(resRefundSuccess.body.data.action, 'COMPENSATION_ACKNOWLEDGED_COMPENSATED');
+
+      const sagaCompensated = service.sagaCoordinator.getSagaStatus(raceTripId);
+      assert.strictEqual(sagaCompensated.status, SAGA_STATUS.COMPENSATED, 'Saga phải kết thúc ở COMPENSATED sau khi Payment xác nhận hoàn tiền');
     });
 
     // -------------------------------------------------------------

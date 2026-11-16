@@ -264,4 +264,39 @@ test('Payment state machine: terminal states, pending capture and row-count safe
     assert.strictEqual(db.wallets.get(passengerId).held_balance, 40000);
     assert.strictEqual(db.wallets.get(passengerId).balance, 60000);
   });
+
+  await t.test('7. Successful refund releases funds and generates payment.event.refund_success outbox event', async () => {
+    const db = new StateMachineMockDb();
+    const passengerId = crypto.randomUUID();
+    const driverId = crypto.randomUUID();
+    const tripId = crypto.randomUUID();
+    const correlationId = 'corr_test_refund_success';
+    seedWallet(db, passengerId, 100000);
+
+    // 1. Hold 40,000 VND
+    await processHoldRequest(db, holdEnvelope(tripId, passengerId, driverId, 40000));
+    assert.strictEqual(db.wallets.get(passengerId).held_balance, 40000);
+    assert.strictEqual(db.wallets.get(passengerId).balance, 60000);
+
+    // 2. Process refund request
+    const refundRes = await processRefund(db, {
+      event_id: crypto.randomUUID(),
+      correlation_id: correlationId,
+      event_type: 'payment.event.refund_requested',
+      payload: { trip_id: tripId, amount: 40000 },
+    });
+
+    assert.strictEqual(refundRes.refunded, true);
+    assert.strictEqual(db.payment_holds.get(tripId).state, 'REFUNDED');
+    assert.strictEqual(db.wallets.get(passengerId).held_balance, 0, 'Held balance reverted to 0');
+    assert.strictEqual(db.wallets.get(passengerId).balance, 100000, 'Balance restored to 100,000 VND');
+
+    // 3. Verify payment.event.refund_success exists in outbox
+    const refundSuccessEvt = db.outbox_events.find((e) => e.event_type === 'payment.event.refund_success');
+    assert(refundSuccessEvt, 'Outbox must contain payment.event.refund_success');
+    assert.strictEqual(refundSuccessEvt.aggregate_id, tripId);
+    assert.strictEqual(refundSuccessEvt.payload.trip_id, tripId);
+    assert.strictEqual(refundSuccessEvt.payload.amount, 40000);
+    assert.strictEqual(refundSuccessEvt.correlation_id, correlationId);
+  });
 });
