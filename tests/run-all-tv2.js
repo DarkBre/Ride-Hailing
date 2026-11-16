@@ -8,6 +8,11 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
+// Tự động kết nối PostgreSQL khi Docker Compose đang chạy nếu chưa cấu hình biến môi trường
+if (!process.env.DRIVER_TEST_DATABASE_URL) {
+  process.env.DRIVER_TEST_DATABASE_URL = 'postgres://driver_service:driver_secret_password@localhost:5432/driver_db';
+}
+
 function runTest(name, file, cwd) {
   console.log(`\n▶ [CHẠY KIỂM THỬ TV2]: ${name} (${file})...`);
   const res = spawnSync(process.execPath, ['--test', file], {

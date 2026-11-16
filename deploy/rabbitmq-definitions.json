@@ -2,12 +2,19 @@
   "rabbit_version": "4.0.0",
   "users": [
     {
-      "name": "guest",
-      "password_hash": "poLip8MAn+YnAFh10H8ZXqBzPGd+m79TFf9MrbkESHsvzMuQ",
+      "name": "ds03_admin",
+      "password_hash": "Dbs2YR9wcIEMRQFPsdf9O2Mh8QOvT2k7qfu/Ff3ZpPfhUOcG",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
       "tags": [
         "administrator"
       ],
+      "limits": {}
+    },
+    {
+      "name": "ds03_app",
+      "password_hash": "AX4KiIXY5QgOGZ4XG/qmMFPXOfMJxNu+C7lJvDfCEff2GLN1",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [],
       "limits": {}
     }
   ],
@@ -18,7 +25,14 @@
   ],
   "permissions": [
     {
-      "user": "guest",
+      "user": "ds03_admin",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    },
+    {
+      "user": "ds03_app",
       "vhost": "/",
       "configure": ".*",
       "write": ".*",
