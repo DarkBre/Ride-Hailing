@@ -380,7 +380,6 @@ function initPassengerMap() {
 
   // Click on map to pick location
   passengerMap.on('click', (e) => {
-    if (!state.mapPickMode) return;
     const { lat, lng } = e.latlng;
     const roundedLat = Math.round(lat * 10000) / 10000;
     const roundedLng = Math.round(lng * 10000) / 10000;
@@ -389,11 +388,51 @@ function initPassengerMap() {
       setPickupCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
       cancelMapPickMode();
       showToast(`Đã chọn điểm đón tại (${roundedLat}, ${roundedLng})`, 'success');
+      return;
     } else if (state.mapPickMode === 'dropoff') {
       setDropoffCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
       cancelMapPickMode();
       showToast(`Đã chọn điểm đến tại (${roundedLat}, ${roundedLng})`, 'success');
+      return;
     }
+
+    // Google Maps Style Free Map Click: Contextual Popup
+    const popupContent = document.createElement('div');
+    popupContent.className = 'p-1 text-slate-800 text-xs';
+    popupContent.innerHTML = `
+      <div class="font-bold mb-1 text-slate-900 flex items-center gap-1">
+        <svg class="w-3.5 h-3.5 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span>Toạ độ: ${roundedLat}, ${roundedLng}</span>
+      </div>
+      <div class="text-[11px] text-slate-500 mb-2">Chọn ghim vị trí này cho chuyến đi của bạn:</div>
+      <div class="flex flex-col gap-1.5">
+        <button id="btn-popup-set-pickup" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span>Đặt làm Điểm Đón</span>
+        </button>
+        <button id="btn-popup-set-dropoff" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+          <span>Đặt làm Điểm Đến</span>
+        </button>
+      </div>
+    `;
+
+    L.popup({ minWidth: 180, closeButton: true })
+      .setLatLng(e.latlng)
+      .setContent(popupContent)
+      .openOn(passengerMap);
+
+    popupContent.querySelector('#btn-popup-set-pickup')?.addEventListener('click', () => {
+      setPickupCoordinates(roundedLat, roundedLng, `Ghim bản đồ (${roundedLat}, ${roundedLng})`);
+      passengerMap.closePopup();
+      showToast(`Đã đặt Điểm Đón tại (${roundedLat}, ${roundedLng})`, 'success');
+    });
+
+    popupContent.querySelector('#btn-popup-set-dropoff')?.addEventListener('click', () => {
+      setDropoffCoordinates(roundedLat, roundedLng, `Ghim bản đồ (${roundedLat}, ${roundedLng})`);
+      passengerMap.closePopup();
+      showToast(`Đã đặt Điểm Đến tại (${roundedLat}, ${roundedLng})`, 'success');
+    });
   });
 
   renderPassengerMapMarkers();
@@ -1322,6 +1361,289 @@ function handleInitialRoute() {
   }
 }
 
+// Popular Vietnamese Landmarks & Hubs for Google Maps Style Autocomplete
+const POPULAR_LOCATIONS = [
+  // Hà Nội
+  { name: 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội', lat: 21.0285, lon: 105.8544, desc: 'Trung tâm thủ đô Hà Nội' },
+  { name: 'Keangnam Landmark 72, Nam Từ Liêm, Hà Nội', lat: 21.0173, lon: 105.7839, desc: 'Tòa nhà Landmark 72 Phạm Hùng' },
+  { name: 'Sân bay Quốc tế Nội Bài, Sóc Sơn, Hà Nội', lat: 21.2187, lon: 105.8042, desc: 'Cảng hàng không quốc tế Nội Bài' },
+  { name: 'Hồ Tây, Tây Hồ, Hà Nội', lat: 21.0583, lon: 105.8239, desc: 'Hồ Tây, đường Thanh Niên' },
+  { name: 'Đại học Bách Khoa Hà Nội, Hai Bà Trưng, Hà Nội', lat: 21.0044, lon: 105.8433, desc: 'Đại Cồ Việt, Bách Khoa' },
+  { name: 'Vincom Mega Mall Royal City, Thanh Xuân, Hà Nội', lat: 20.9995, lon: 105.8155, desc: '72A Nguyễn Trãi' },
+  { name: 'Vincom Mega Mall Times City, Hai Bà Trưng, Hà Nội', lat: 20.9950, lon: 105.8670, desc: '458 Minh Khai' },
+  // Đà Nẵng
+  { name: 'Cầu Rồng, Hải Châu, Đà Nẵng', lat: 16.0611, lon: 108.2272, desc: 'Cầu Rồng sông Hàn' },
+  { name: 'Bãi biển Mỹ Khê, Ngũ Hành Sơn, Đà Nẵng', lat: 16.0600, lon: 108.2460, desc: 'Bãi biển Mỹ Khê' },
+  { name: 'Sân bay Quốc tế Đà Nẵng, Hải Châu, Đà Nẵng', lat: 16.0538, lon: 108.1994, desc: 'Cảng hàng không quốc tế Đà Nẵng' },
+  { name: 'Bán đảo Sơn Trà, Sơn Trà, Đà Nẵng', lat: 16.1189, lon: 108.2778, desc: 'Bán đảo Sơn Trà, Chùa Linh Ứng' },
+  { name: 'Bà Nà Hills, Hòa Vang, Đà Nẵng', lat: 15.9989, lon: 107.9959, desc: 'Khu du lịch Sun World Bà Nà Hills' },
+  // TP. Hồ Chí Minh
+  { name: 'Chợ Bến Thành, Quận 1, TP. HCM', lat: 10.7725, lon: 106.6980, desc: 'Chợ Bến Thành, trung tâm Quận 1' },
+  { name: 'Landmark 81, Bình Thạnh, TP. HCM', lat: 10.7950, lon: 106.7219, desc: 'Tòa nhà cao nhất Việt Nam' },
+  { name: 'Sân bay Quốc tế Tân Sơn Nhất, Tân Bình, TP. HCM', lat: 10.8185, lon: 106.6588, desc: 'Cảng hàng không quốc tế Tân Sơn Nhất' },
+  { name: 'Nhà thờ Đức Bà, Quận 1, TP. HCM', lat: 10.7798, lon: 106.6990, desc: 'Công trường Công Xã Paris' },
+  { name: 'Phố đi bộ Nguyễn Huệ, Quận 1, TP. HCM', lat: 10.7744, lon: 106.7032, desc: 'Phố đi bộ Quận 1' },
+  { name: 'Khu đô thị Phú Mỹ Hưng, Quận 7, TP. HCM', lat: 10.7293, lon: 106.7153, desc: 'Khu đô thị Phú Mỹ Hưng' },
+  // Các tỉnh thành khác
+  { name: 'Thành phố Đà Lạt, Lâm Đồng', lat: 11.9404, lon: 108.4583, desc: 'Trung tâm TP. Đà Lạt, Hồ Xuân Hương' },
+  { name: 'Thành phố Vũng Tàu, Bà Rịa - Vũng Tàu', lat: 10.3460, lon: 107.0843, desc: 'Bãi Trước, Bãi Sau Vũng Tàu' },
+  { name: 'Thành phố Cần Thơ, Cần Thơ', lat: 10.0452, lon: 105.7469, desc: 'Bến Ninh Kiều, Cần Thơ' },
+  { name: 'Thành phố Nha Trang, Khánh Hòa', lat: 12.2388, lon: 109.1967, desc: 'Bờ biển Trần Phú, Nha Trang' },
+  { name: 'Thành phố Huế, Thừa Thiên Huế', lat: 16.4637, lon: 107.5909, desc: 'Đại Nội Huế, Sông Hương' },
+  { name: 'Vịnh Hạ Long, Quảng Ninh', lat: 20.9101, lon: 107.1839, desc: 'Thành phố Hạ Long, Bãi Cháy' },
+  { name: 'Đảo Phú Quốc, Kiên Giang', lat: 10.2899, lon: 103.9840, desc: 'TP. Phú Quốc, Bãi Trường' },
+];
+
+// Live Driver Distribution Metrics Poller & Updater
+async function updateLiveDistributionMetrics() {
+  const availEl = document.getElementById('dist-count-available');
+  const resEl = document.getElementById('dist-count-reserved');
+  const busyEl = document.getElementById('dist-count-busy');
+  const offEl = document.getElementById('dist-count-offline');
+
+  try {
+    const lat = state.pickupCoords?.lat || 21.0285;
+    const lon = state.pickupCoords?.lon || 105.8544;
+    const res = await fetch(`http://localhost:8080/drivers/available?lat=${lat}&lon=${lon}&radius_km=50`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const count = Array.isArray(json.data) ? json.data.length : 0;
+      if (availEl) availEl.textContent = count;
+    }
+  } catch (_) {
+    // Keep fallback
+  }
+
+  // Reflect current active driver state if available
+  if (state.driver?.status) {
+    if (state.driver.status === 'RESERVED') {
+      if (resEl) resEl.textContent = '1';
+    } else if (state.driver.status === 'BUSY') {
+      if (busyEl) busyEl.textContent = '1';
+    } else if (state.driver.status === 'OFFLINE') {
+      if (offEl) offEl.textContent = '1';
+    }
+  }
+}
+
+// Google Maps Style Controls: Search, Geolocation & Fullscreen
+function setupMapSearchAndControls() {
+  const searchInput = document.getElementById('input-map-search');
+  const searchBtn = document.getElementById('btn-map-search');
+  const suggestionsBox = document.getElementById('map-search-suggestions');
+  const myLocationBtn = document.getElementById('btn-map-my-location');
+  const fullscreenBtn = document.getElementById('btn-map-fullscreen');
+  const mapWrapper = document.getElementById('passenger-map-wrapper');
+  const openDistBtn = document.getElementById('btn-map-open-distribution');
+
+  if (openDistBtn) {
+    openDistBtn.addEventListener('click', () => {
+      const drawer = document.getElementById('diagnostics-drawer');
+      const backdrop = document.getElementById('diagnostics-backdrop');
+      if (drawer) {
+        drawer.classList.remove('hidden');
+        backdrop?.classList.remove('hidden');
+        pollDiagnosticsHealth();
+      }
+    });
+  }
+
+  if (fullscreenBtn && mapWrapper) {
+    fullscreenBtn.addEventListener('click', () => {
+      const isFullscreen = mapWrapper.classList.contains('fixed');
+      if (isFullscreen) {
+        mapWrapper.classList.remove('fixed', 'inset-0', 'z-[1050]', 'h-screen', 'w-screen', 'rounded-none');
+        fullscreenBtn.classList.remove('text-blue-400');
+        showToast('Đã thoát chế độ toàn màn hình', 'info');
+      } else {
+        mapWrapper.classList.add('fixed', 'inset-0', 'z-[1050]', 'h-screen', 'w-screen', 'rounded-none');
+        fullscreenBtn.classList.add('text-blue-400');
+        showToast('Bản đồ toàn màn hình (Nhấn Esc để thoát)', 'info');
+      }
+      setTimeout(() => {
+        if (passengerMap) passengerMap.invalidateSize();
+      }, 100);
+    });
+  }
+
+  if (myLocationBtn) {
+    myLocationBtn.addEventListener('click', () => {
+      if ('geolocation' in navigator) {
+        myLocationBtn.classList.add('animate-pulse');
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            myLocationBtn.classList.remove('animate-pulse');
+            const lat = Math.round(pos.coords.latitude * 10000) / 10000;
+            const lon = Math.round(pos.coords.longitude * 10000) / 10000;
+            if (passengerMap) {
+              passengerMap.flyTo([lat, lon], 15, { duration: 1.5 });
+            }
+            setPickupCoordinates(lat, lon, `Vị trí GPS của tôi (${lat}, ${lon})`);
+            showToast(`Đã định vị thành công vị trí của bạn (${lat}, ${lon})`, 'success');
+          },
+          (err) => {
+            myLocationBtn.classList.remove('animate-pulse');
+            const fallbackLat = 21.0285;
+            const fallbackLon = 105.8544;
+            if (passengerMap) {
+              passengerMap.flyTo([fallbackLat, fallbackLon], 14, { duration: 1 });
+            }
+            showToast(`Không thể đọc GPS (${err.message || 'Quyền bị từ chối'}). Đã căn giữa khu vực chính.`, 'warning');
+          },
+          { timeout: 5000, enableHighAccuracy: true }
+        );
+      } else {
+        showToast('Trình duyệt không hỗ trợ Geolocation API', 'warning');
+      }
+    });
+  }
+
+  function renderSuggestions(items) {
+    if (!suggestionsBox) return;
+    if (!items || items.length === 0) {
+      suggestionsBox.innerHTML = '<div class="p-2.5 text-slate-400 text-center">Không tìm thấy địa điểm phù hợp</div>';
+      suggestionsBox.classList.remove('hidden');
+      return;
+    }
+    suggestionsBox.innerHTML = items.map((item) => `
+      <div class="search-suggestion-item p-2 hover:bg-slate-800 cursor-pointer flex flex-col transition" data-lat="${item.lat}" data-lon="${item.lon}" data-name="${encodeURIComponent(item.name)}">
+        <span class="font-medium text-slate-200 text-xs">${item.name}</span>
+        <span class="text-[10px] text-slate-400">${item.desc || (item.lat + ', ' + item.lon)}</span>
+      </div>
+    `).join('');
+    suggestionsBox.classList.remove('hidden');
+
+    suggestionsBox.querySelectorAll('.search-suggestion-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const lat = parseFloat(el.dataset.lat);
+        const lon = parseFloat(el.dataset.lon);
+        const name = decodeURIComponent(el.dataset.name);
+        selectLocation(lat, lon, name);
+      });
+    });
+  }
+
+  function selectLocation(lat, lon, name) {
+    if (searchInput) searchInput.value = name;
+    if (suggestionsBox) suggestionsBox.classList.add('hidden');
+    if (passengerMap) {
+      passengerMap.flyTo([lat, lon], 14, { duration: 1.2 });
+      setTimeout(() => {
+        const popupContent = document.createElement('div');
+        popupContent.className = 'p-1 text-slate-800 text-xs';
+        popupContent.innerHTML = `
+          <div class="font-bold mb-1 text-slate-900">${name}</div>
+          <div class="text-[11px] text-slate-500 mb-2">Toạ độ: ${lat}, ${lon}</div>
+          <div class="flex flex-col gap-1.5">
+            <button id="btn-popup-search-pickup" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-2 rounded transition">
+              📍 Đặt làm Điểm Đón
+            </button>
+            <button id="btn-popup-search-dropoff" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 px-2 rounded transition">
+              🏁 Đặt làm Điểm Đến
+            </button>
+          </div>
+        `;
+        L.popup({ minWidth: 180, closeButton: true })
+          .setLatLng([lat, lon])
+          .setContent(popupContent)
+          .openOn(passengerMap);
+
+        popupContent.querySelector('#btn-popup-search-pickup')?.addEventListener('click', () => {
+          setPickupCoordinates(lat, lon, name);
+          passengerMap.closePopup();
+          showToast(`Đã đặt Điểm Đón: ${name}`, 'success');
+        });
+        popupContent.querySelector('#btn-popup-search-dropoff')?.addEventListener('click', () => {
+          setDropoffCoordinates(lat, lon, name);
+          passengerMap.closePopup();
+          showToast(`Đã đặt Điểm Đến: ${name}`, 'success');
+        });
+      }, 500);
+    }
+  }
+
+  let searchTimeout = null;
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      clearTimeout(searchTimeout);
+      if (!q) {
+        if (suggestionsBox) suggestionsBox.classList.add('hidden');
+        return;
+      }
+      const matches = POPULAR_LOCATIONS.filter((loc) =>
+        loc.name.toLowerCase().includes(q) || (loc.desc && loc.desc.toLowerCase().includes(q))
+      );
+      if (matches.length > 0) {
+        renderSuggestions(matches.slice(0, 5));
+      } else {
+        searchTimeout = setTimeout(async () => {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=vn&limit=4`, {
+              signal: AbortSignal.timeout(3500)
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const items = data.map((d) => ({
+                name: d.display_name.split(',').slice(0, 3).join(','),
+                lat: parseFloat(d.lat),
+                lon: parseFloat(d.lon),
+                desc: d.display_name
+              }));
+              renderSuggestions(items);
+            } else {
+              renderSuggestions([]);
+            }
+          } catch (_) {
+            renderSuggestions([]);
+          }
+        }, 400);
+      }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const firstItem = suggestionsBox?.querySelector('.search-suggestion-item');
+        if (firstItem) {
+          firstItem.click();
+        } else if (searchInput.value.trim()) {
+          const q = searchInput.value.trim().toLowerCase();
+          const match = POPULAR_LOCATIONS.find((loc) =>
+            loc.name.toLowerCase().includes(q)
+          );
+          if (match) {
+            selectLocation(match.lat, match.lon, match.name);
+          }
+        }
+      }
+    });
+  }
+
+  if (searchBtn && searchInput) {
+    searchBtn.addEventListener('click', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q) return;
+      const match = POPULAR_LOCATIONS.find((loc) =>
+        loc.name.toLowerCase().includes(q)
+      );
+      if (match) {
+        selectLocation(match.lat, match.lon, match.name);
+      } else {
+        searchInput.dispatchEvent(new Event('input'));
+      }
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (suggestionsBox && !suggestionsBox.contains(e.target) && e.target !== searchInput) {
+      suggestionsBox.classList.add('hidden');
+    }
+  });
+}
+
 // Diagnostics Health Probes Poller
 async function pollDiagnosticsHealth() {
   const checkService = async (url, indicatorId) => {
@@ -1339,6 +1661,7 @@ async function pollDiagnosticsHealth() {
     checkService('http://localhost:8080/health', 'gateway-indicator'),
     checkService('http://localhost:8005/health', 'payment-indicator'),
     checkService('http://localhost:8006/health', 'notification-indicator'),
+    updateLiveDistributionMetrics(),
   ]);
 }
 
@@ -1620,13 +1943,16 @@ function bindEvents() {
   document.getElementById('btn-driver-start')?.addEventListener('click', handleDriverStartTrip);
   document.getElementById('btn-driver-complete')?.addEventListener('click', handleDriverCompleteTrip);
 
+  // Initialize Google Maps Style Controls & Search
+  setupMapSearchAndControls();
+
   // Responsive window resize for Leaflet maps
   window.addEventListener('resize', () => {
     if (passengerMap) passengerMap.invalidateSize();
     if (driverMap) driverMap.invalidateSize();
   });
 
-  // Keyboard shortcut: Escape key closes drawers and modals
+  // Keyboard shortcut: Escape key closes drawers, modals, search suggestions and fullscreen
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       document.getElementById('diagnostics-drawer')?.classList.add('hidden');
@@ -1634,6 +1960,13 @@ function bindEvents() {
       document.getElementById('notification-popover')?.classList.add('hidden');
       document.getElementById('cancel-confirm-modal')?.classList.add('hidden');
       document.getElementById('topup-modal')?.classList.add('hidden');
+      document.getElementById('map-search-suggestions')?.classList.add('hidden');
+      const mapWrapper = document.getElementById('passenger-map-wrapper');
+      if (mapWrapper?.classList.contains('fixed')) {
+        mapWrapper.classList.remove('fixed', 'inset-0', 'z-[1050]', 'h-screen', 'w-screen', 'rounded-none');
+        document.getElementById('btn-map-fullscreen')?.classList.remove('text-blue-400');
+        if (passengerMap) passengerMap.invalidateSize();
+      }
       cancelMapPickMode();
     }
   });

@@ -508,14 +508,35 @@
       </div>
     </div>
 
-    <!-- Right Column: Interactive Hanoi Leaflet Map (8 cols) -->
-    <div class="lg:col-span-8 flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden relative min-h-[450px]">
-      <div id="passenger-map" class="w-full h-full flex-1 min-h-[450px]"></div>
+    <!-- Right Column: Interactive Leaflet Map (Google Maps Style) (8 cols) -->
+    <div id="passenger-map-wrapper" class="lg:col-span-8 flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden relative min-h-[500px]">
+      <div id="passenger-map" class="w-full h-full flex-1 min-h-[500px]"></div>
 
-      <!-- Map Toolbar Overlay -->
-      <div class="absolute top-3 left-3 z-[400] flex flex-wrap items-center gap-1.5 bg-slate-900/90 backdrop-blur-sm p-1.5 rounded-lg border border-slate-700/70 shadow-md">
-        <button id="btn-map-fit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2.5 py-1 rounded transition" title="Căn giữa toàn bộ tuyến đường">
-          Căn Giữa Tuyến
+      <!-- Google Maps Floating Search (Top Left) -->
+      <div class="absolute top-3 left-3 z-[600] pointer-events-auto">
+        <div class="relative flex items-center bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-lg shadow-xl px-2.5 py-1.5 text-xs text-white">
+          <svg class="w-4 h-4 text-blue-400 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="input-map-search" type="text" placeholder="Tìm kiếm địa điểm (Google Maps)..." class="bg-transparent border-none text-xs text-slate-100 placeholder-slate-400 focus:outline-none w-44 sm:w-60" autocomplete="off" />
+          <button id="btn-map-search" class="text-slate-400 hover:text-white p-1 ml-1" title="Tìm kiếm vị trí">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <!-- Suggestions Dropdown -->
+          <div id="map-search-suggestions" class="hidden absolute top-full left-0 mt-1.5 w-full sm:w-80 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-lg shadow-2xl max-h-64 overflow-y-auto z-[700] text-xs divide-y divide-slate-800/80">
+          </div>
+        </div>
+      </div>
+
+      <!-- Google Maps Floating Controls (Top Right) -->
+      <div class="absolute top-3 right-3 z-[500] pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 bg-slate-900/95 backdrop-blur-md p-1 rounded-lg border border-slate-700/80 shadow-xl max-w-[calc(100%-260px)]">
+        <button id="btn-map-my-location" class="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 rounded transition" title="📍 Vị trí hiện tại của tôi (GPS)">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="2" y1="12" x2="4" y2="12"/></svg>
+        </button>
+        <button id="btn-map-fullscreen" class="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-blue-400 rounded transition" title="⛶ Toàn màn hình bản đồ">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+        <div class="h-3 w-px bg-slate-700 mx-0.5"></div>
+        <button id="btn-map-fit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded transition" title="Căn giữa toàn bộ tuyến đường">
+          Căn Tuyến
         </button>
         <button id="btn-map-reset-points" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded transition" title="Đặt lại điểm mẫu">
           Đặt Lại
@@ -532,6 +553,10 @@
         </button>
         <button id="btn-jump-country" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] px-2 py-1 rounded transition" title="Thu nhỏ toàn cảnh Việt Nam">
           Toàn Quốc
+        </button>
+        <button id="btn-map-open-distribution" class="bg-amber-900/40 hover:bg-amber-800/60 text-amber-300 text-[11px] px-2 py-1 rounded border border-amber-700/50 transition flex items-center gap-1" title="Mở bảng phân phối Live Distribution">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span>Live Distribution</span>
         </button>
         <button id="btn-cancel-pick" class="hidden bg-red-900/60 hover:bg-red-800 text-red-200 text-[11px] px-2.5 py-1 rounded border border-red-700/60 transition">
           ✕ Hủy Chọn Điểm
@@ -756,6 +781,39 @@
       <div class="flex items-center space-x-1.5">
         <span id="sse-indicator" class="w-2 h-2 rounded-full bg-red-500"></span>
         <span class="text-slate-400">SSE</span>
+      </div>
+    </div>
+
+    <!-- Live Driver Distribution & Supply Metrics -->
+    <div class="px-4 py-2.5 bg-slate-950/80 border-b border-slate-800 text-xs">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Phân Phối Tài Xế (Live Distribution)</span>
+        <span class="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          Đang hoạt động
+        </span>
+      </div>
+      <div class="grid grid-cols-4 gap-2 text-center text-[11px] font-mono">
+        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
+          <div class="text-emerald-400 font-bold" id="dist-count-available">2</div>
+          <div class="text-[9px] text-slate-400">AVAILABLE</div>
+        </div>
+        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
+          <div class="text-amber-400 font-bold" id="dist-count-reserved">0</div>
+          <div class="text-[9px] text-slate-400">RESERVED</div>
+        </div>
+        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
+          <div class="text-sky-400 font-bold" id="dist-count-busy">0</div>
+          <div class="text-[9px] text-slate-400">BUSY</div>
+        </div>
+        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
+          <div class="text-slate-400 font-bold" id="dist-count-offline">0</div>
+          <div class="text-[9px] text-slate-400">OFFLINE</div>
+        </div>
+      </div>
+      <div class="mt-2 text-[10px] text-slate-400 flex items-center justify-between">
+        <span>Khu vực: Toàn quốc (Hà Nội, Đà Nẵng, TP.HCM)</span>
+        <span class="text-slate-500">Radius: 5km</span>
       </div>
     </div>
 

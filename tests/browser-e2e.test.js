@@ -402,8 +402,8 @@ async function runBrowserTests() {
     recordResult('UI-02', 'Bản đồ tương tác', 'FAIL', Date.now() - tMap, err.message);
   }
 
-  // Test UI-04C: Marker Dragging (Kéo thả trực tiếp marker đón)
-  const tDrag = Date.now();
+  // Test UI-04C1: Marker Dragging (Kéo thả trực tiếp marker đón)
+  const tDragPickup = Date.now();
   try {
     const initialLat = await page.textContent('#text-pickup-lat');
     const markerEl = await page.waitForSelector('.marker-pickup', { timeout: 4000 });
@@ -420,13 +420,113 @@ async function runBrowserTests() {
     const newFare = await page.textContent('#fare-estimated-amount');
 
     if (newLat !== initialLat) {
-      recordResult('UI-04C', 'Kéo thả trực tiếp marker điểm đón (Marker Drag) cập nhật toạ độ và giá cước tức thì', 'PASS', Date.now() - tDrag, `Lat: ${initialLat} -> ${newLat}, Cước mới: ${newFare} đ`);
+      recordResult('UI-04C1', 'Kéo thả trực tiếp marker điểm đón (Pickup Marker Drag) cập nhật toạ độ và giá cước tức thì', 'PASS', Date.now() - tDragPickup, `Lat: ${initialLat} -> ${newLat}, Cước mới: ${newFare} đ`);
     } else {
-      throw new Error(`Toạ độ không đổi sau khi kéo marker: ${initialLat} vs ${newLat}`);
+      throw new Error(`Toạ độ điểm đón không đổi sau khi kéo marker: ${initialLat} vs ${newLat}`);
     }
   } catch (err) {
-    recordResult('UI-04C', 'Kéo thả marker điểm đón', 'FAIL', Date.now() - tDrag, err.message);
+    recordResult('UI-04C1', 'Kéo thả marker điểm đón', 'FAIL', Date.now() - tDragPickup, err.message);
   }
+
+  // Test UI-04C2: Marker Dragging (Kéo thả trực tiếp marker điểm trả)
+  const tDragDropoff = Date.now();
+  try {
+    const initialDropoffLat = await page.textContent('#text-dropoff-lat');
+    const dropoffMarkerEl = await page.waitForSelector('.marker-dropoff', { timeout: 4000 });
+    const boxDropoff = await dropoffMarkerEl.boundingBox();
+    if (!boxDropoff) throw new Error('Không tìm thấy bounding box của .marker-dropoff');
+
+    await page.mouse.move(boxDropoff.x + boxDropoff.width / 2, boxDropoff.y + boxDropoff.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(boxDropoff.x + boxDropoff.width / 2 - 40, boxDropoff.y + boxDropoff.height / 2 - 40, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+
+    const newDropoffLat = await page.textContent('#text-dropoff-lat');
+    const newDropoffFare = await page.textContent('#fare-estimated-amount');
+
+    if (newDropoffLat !== initialDropoffLat) {
+      recordResult('UI-04C2', 'Kéo thả trực tiếp marker điểm trả (Dropoff Marker Drag) cập nhật toạ độ và giá cước tức thì', 'PASS', Date.now() - tDragDropoff, `Dropoff Lat: ${initialDropoffLat} -> ${newDropoffLat}, Cước: ${newDropoffFare} đ`);
+    } else {
+      throw new Error(`Toạ độ điểm trả không đổi sau khi kéo marker: ${initialDropoffLat} vs ${newDropoffLat}`);
+    }
+  } catch (err) {
+    recordResult('UI-04C2', 'Kéo thả marker điểm trả', 'FAIL', Date.now() - tDragDropoff, err.message);
+  }
+
+  // Test UI-04E: Google Maps Style Search & Suggestions Autocomplete
+  const tSearch = Date.now();
+  try {
+    await page.fill('#input-map-search', 'Landmark 72');
+    await page.waitForSelector('#map-search-suggestions:not(.hidden)', { timeout: 3000 });
+    const suggestionCount = await page.$$eval('.search-suggestion-item', (items) => items.length);
+    if (suggestionCount === 0) throw new Error('Không có gợi ý địa điểm nào hiển thị');
+
+    // Click gợi ý đầu tiên
+    await page.click('.search-suggestion-item:first-child');
+    await page.waitForTimeout(700);
+
+    // Kiểm tra popup xuất hiện và bấm chọn đặt điểm đến
+    const popupBtn = await page.waitForSelector('#btn-popup-search-dropoff', { timeout: 3000 });
+    await popupBtn.click();
+    await page.waitForTimeout(400);
+
+    const updatedDropoffAddr = await page.$eval('#input-dropoff-address', (el) => el.value);
+    recordResult('UI-04E', 'Tìm kiếm địa điểm kiểu Google Maps với gợi ý tự động (Autocomplete) và ghim nhanh điểm đến', 'PASS', Date.now() - tSearch, `Địa chỉ ghim: ${updatedDropoffAddr}`);
+  } catch (err) {
+    recordResult('UI-04E', 'Tìm kiếm địa điểm kiểu Google Maps', 'FAIL', Date.now() - tSearch, err.message);
+  }
+
+  // Test UI-04F: Advanced Controls (Fullscreen & GPS Geolocation)
+  const tControls = Date.now();
+  try {
+    // 1. Phóng to toàn màn hình
+    await page.click('#btn-map-fullscreen');
+    await page.waitForTimeout(300);
+    const isFullscreen = await page.$eval('#passenger-map-wrapper', (el) => el.classList.contains('fixed'));
+    if (!isFullscreen) throw new Error('Bản đồ không chuyển sang chế độ toàn màn hình');
+
+    // 2. Thoát toàn màn hình bằng phím Escape
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    const isRestored = await page.$eval('#passenger-map-wrapper', (el) => !el.classList.contains('fixed'));
+    if (!isRestored) throw new Error('Bản đồ không khôi phục bố cục bình thường sau khi nhấn Escape');
+
+    // 3. Nút vị trí hiện tại (GPS)
+    await page.click('#btn-map-my-location');
+    await page.waitForTimeout(400);
+
+    recordResult('UI-04F', 'Điều khiển bản đồ nâng cao kiểu Google Maps: Phóng to toàn màn hình (Fullscreen) và Định vị GPS', 'PASS', Date.now() - tControls);
+  } catch (err) {
+    recordResult('UI-04F', 'Điều khiển bản đồ nâng cao', 'FAIL', Date.now() - tControls, err.message);
+  }
+
+  // Test UI-04G: Google Maps Free Map Click (Nhấp tự do mở popup chọn điểm trực tiếp)
+  const tFreeClick = Date.now();
+  try {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    // Click tự do trên bản đồ
+    await page.click('#passenger-map', { position: { x: 380, y: 260 } });
+    await page.waitForSelector('.leaflet-popup', { timeout: 3000 });
+    const hasPickupBtn = await page.isVisible('#btn-popup-set-pickup');
+    const hasDropoffBtn = await page.isVisible('#btn-popup-set-dropoff');
+    if (!hasPickupBtn || !hasDropoffBtn) throw new Error('Popup không hiển thị đủ nút Đặt Điểm Đón / Điểm Đến');
+
+    // Bấm chọn điểm đón từ popup tự do
+    await page.click('#btn-popup-set-pickup');
+    await page.waitForTimeout(400);
+
+    const freeClickLat = await page.textContent('#text-pickup-lat');
+    recordResult('UI-04G', 'Nhấp tự do trên bản đồ kiểu Google Maps (Free Click) mở popup đặt điểm đón/đến trực tiếp không cần bật chế độ trước', 'PASS', Date.now() - tFreeClick, `Toạ độ đón mới: ${freeClickLat}`);
+  } catch (err) {
+    recordResult('UI-04G', 'Nhấp tự do trên bản đồ kiểu Google Maps', 'FAIL', Date.now() - tFreeClick, err.message);
+  }
+
+  // Khôi phục điểm mẫu mặc định tại Hà Nội cho các bước tạo cuốc UI-06 tiếp theo
+  await page.click('#btn-map-reset-points');
+  await page.waitForTimeout(500);
 
   // Kiểm tra 3 tầng Driver ở Trạng thái 1: AVAILABLE (Khởi đầu)
   const dbStatusInitial = queryDriverDbStatus(DRIVER1_USER_ID);
@@ -705,6 +805,10 @@ async function runBrowserTests() {
     } else {
       throw new Error('Badge was not cleared after mark-all-read');
     }
+
+    // Đóng popover thông báo bằng Escape để không che khuất màn hình
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
   } catch (err) {
     recordResult('UI-09', 'Trung tâm thông báo', 'FAIL', Date.now() - tNotif, err.message);
   }
@@ -725,18 +829,40 @@ async function runBrowserTests() {
   // Restore desktop viewport
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  // Test UI-14: No dead buttons / Diagnostics drawer test
+  // Test UI-14: Live Distribution Drawer & Map Toolbar Integration
   const tDiag = Date.now();
   try {
-    await page.click('#btn-toggle-diagnostics');
-    await page.waitForSelector('#diagnostics-drawer', { state: 'visible', timeout: 3000 });
-    const hasLogs = await page.isVisible('#logs-container');
-    await page.click('#btn-close-diagnostics');
+    // Đảm bảo không còn popover che khuất
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
 
-    recordResult('UI-14', 'Toàn bộ nút điều hướng hoạt động đầy đủ, không có dead buttons', 'PASS', Date.now() - tDiag);
+    // 1. Mở Live Distribution trực tiếp từ nút trên thanh công cụ bản đồ
+    await page.click('#btn-map-open-distribution');
+    await page.waitForSelector('#diagnostics-drawer:not(.hidden)', { state: 'visible', timeout: 3000 });
+
+    // 2. Đối chiếu số liệu phân bổ tài xế (SSOT)
+    const availCount = await page.textContent('#dist-count-available');
+    const reservedCount = await page.textContent('#dist-count-reserved');
+    const busyCount = await page.textContent('#dist-count-busy');
+    const offlineCount = await page.textContent('#dist-count-offline');
+    const hasLogs = await page.isVisible('#logs-container');
+
+    // 3. Đóng ngăn kéo qua nút Đóng (✕)
+    await page.click('#btn-close-diagnostics');
+    await page.waitForTimeout(300);
+    const isHiddenAfterClose = await page.$eval('#diagnostics-drawer', (el) => el.classList.contains('hidden'));
+    if (!isHiddenAfterClose) throw new Error('Ngăn kéo Live Distribution không đóng sau khi bấm nút Đóng');
+
+    // 4. Mở lại bằng nút công cụ góc phải trên thanh điều hướng để đảm bảo không có dead button
+    await page.click('#btn-toggle-diagnostics');
+    await page.waitForSelector('#diagnostics-drawer:not(.hidden)', { state: 'visible', timeout: 3000 });
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+
+    recordResult('UI-14', 'Mở bảng Live Distribution từ bản đồ, đối chiếu chỉ số phân bổ tài xế và đóng an toàn không che khuất', 'PASS', Date.now() - tDiag, `Available: ${availCount}, Reserved: ${reservedCount}, Busy: ${busyCount}, Offline: ${offlineCount}`);
     recordResult('UI-15', 'Toàn bộ giao diện hoạt động tái lập từ image build nguồn gốc', 'PASS', Date.now() - tDiag);
   } catch (err) {
-    recordResult('UI-14', 'Kiểm tra nút điều hướng', 'FAIL', Date.now() - tDiag, err.message);
+    recordResult('UI-14', 'Kiểm tra Live Distribution và nút điều hướng', 'FAIL', Date.now() - tDiag, err.message);
   }
 
   await browser.close();
