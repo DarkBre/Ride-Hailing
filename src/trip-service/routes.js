@@ -273,6 +273,46 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
       },
     })),
 
+    // 2.6. Lấy chuyến đi đang hoạt động của người dùng hiện tại (Passenger hoặc Driver)
+    ...['/trips/active', '/api/v1/trips/active'].map((path) => ({
+      method: 'GET',
+      path,
+      status: 200,
+      handler: async ({ headers }) => {
+        const caller = requireCaller(headers);
+        let trip = null;
+
+        if (caller.role === 'PASSENGER') {
+          trip = db.get(
+            `SELECT * FROM trips 
+             WHERE passenger_id = ? 
+               AND status NOT IN ('COMPLETED', 'CANCELLED') 
+             ORDER BY created_at DESC LIMIT 1;`,
+            caller.userId
+          );
+        } else if (caller.role === 'DRIVER') {
+          trip = db.get(
+            `SELECT * FROM trips 
+             WHERE (driver_user_id = ? OR driver_id = ?) 
+               AND status NOT IN ('COMPLETED', 'CANCELLED') 
+             ORDER BY created_at DESC LIMIT 1;`,
+            caller.userId,
+            caller.userId
+          );
+        }
+
+        if (!trip) {
+          return null;
+        }
+
+        const saga = sagaCoordinator.getSagaStatus(trip.id);
+        return {
+          ...trip,
+          saga: saga ? { status: saga.status, current_step: saga.current_step } : null,
+        };
+      },
+    })),
+
     // 3. Lấy thông tin chuyến đi (/trips/:id và /api/v1/trips/:id)
     ...['/trips/:id', '/api/v1/trips/:id'].map((path) => ({
       method: 'GET',

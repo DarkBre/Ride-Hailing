@@ -91,6 +91,12 @@ h2 {
   justify-content: center;
   border-radius: 50%;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  touch-action: none;
+}
+
+.custom-marker-pin:active {
+  cursor: grabbing;
 }
 
 .marker-pickup {

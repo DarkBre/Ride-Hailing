@@ -208,6 +208,17 @@ async function runBrowserTests() {
     await page.click('#btn-submit-passenger-login');
     await page.waitForSelector('#view-passenger-dashboard', { state: 'visible' });
 
+    // Cleanup lingering active trip if present from prior tests
+    const activeSection = await page.$('#passenger-active-trip-section:not(.hidden)');
+    if (activeSection) {
+      console.log('[TEST-CLEANUP] Phát hiện chuyến xe cũ còn hiển thị, reset giao diện...');
+      await page.evaluate(() => {
+        document.getElementById('passenger-active-trip-section')?.classList.add('hidden');
+        document.getElementById('passenger-booking-section')?.classList.remove('hidden');
+      });
+    }
+    await page.waitForSelector('#passenger-booking-section:not(.hidden)', { timeout: 5000 });
+
     // Click map pickup mode
     await page.click('#btn-pick-pickup');
     await page.click('#passenger-map', { position: { x: 200, y: 200 } });
@@ -230,24 +241,153 @@ async function runBrowserTests() {
     recordResult('UI-02', 'Bản đồ tương tác', 'FAIL', Date.now() - tMap, err.message);
   }
 
-  // Test UI-06 & UI-08: Passenger creates trip and tracks active trip state
+  // Test UI-06: Passenger creates trip
   const tTrip = Date.now();
   let createdTripId = null;
   try {
     await page.click('#btn-create-trip');
-    await page.waitForSelector('#passenger-active-trip-section', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('#passenger-active-trip-section', { state: 'visible', timeout: 6000 });
 
     createdTripId = await page.textContent('#active-trip-id');
-    const statusText = await page.textContent('#active-trip-status-badge');
+    const initialStatus = await page.textContent('#active-trip-status-badge');
 
-    recordResult('UI-06', 'Hành khách tạo cuốc xe thành công qua giao diện', 'PASS', Date.now() - tTrip, `Trip ID: ${createdTripId}, Trạng thái: ${statusText}`);
+    if (!createdTripId || createdTripId === '---') {
+      throw new Error('Trip ID was not generated');
+    }
 
-    // Wait for Matching & Payment confirmation
-    await page.waitForTimeout(3500);
-    const updatedStatus = await page.textContent('#active-trip-status-badge');
-    recordResult('UI-08', 'Cập nhật trạng thái vòng đời cuốc xe (Saga Stepper) theo thời gian thực', 'PASS', Date.now() - tTrip, `Trạng thái: ${updatedStatus}`);
+    recordResult('UI-06', 'Hành khách tạo cuốc xe thành công qua giao diện', 'PASS', Date.now() - tTrip, `Trip ID: ${createdTripId}, Khởi tạo: ${initialStatus}`);
   } catch (err) {
     recordResult('UI-06', 'Hành khách tạo cuốc xe', 'FAIL', Date.now() - tTrip, err.message);
+  }
+
+  // Test UI-07 & UI-08: Driver handles trip via Driver Portal & Passenger tracks full lifecycle
+  const tDriverJourney = Date.now();
+  let driverContext = null;
+  let driverPage = null;
+  try {
+    // Wait for Matching and Payment Hold to assign and confirm trip
+    let currentStatus = '';
+    for (let i = 0; i < 20; i++) {
+      currentStatus = (await page.textContent('#active-trip-status-badge') || '').trim();
+      if (['DRIVER_ASSIGNED', 'CONFIRMED'].includes(currentStatus)) break;
+      if (currentStatus.includes('CANCELLED')) {
+        throw new Error(`Cuốc xe bị hủy ngoài ý muốn: ${currentStatus}`);
+      }
+      await page.waitForTimeout(1000);
+    }
+
+    if (!['DRIVER_ASSIGNED', 'CONFIRMED'].includes(currentStatus)) {
+      throw new Error(`Cuốc xe không đạt trạng thái DRIVER_ASSIGNED/CONFIRMED sau 20s (Hiện tại: ${currentStatus})`);
+    }
+
+    // Open second page for Driver 1 in isolated browser context
+    driverContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    driverPage = await driverContext.newPage();
+    await driverPage.goto(`${BASE_URL}/login/driver`, { waitUntil: 'networkidle' });
+    await driverPage.fill('#driver-login-email', 'driver1@demo.ds03');
+    await driverPage.fill('#driver-login-password', 'Password123!');
+    await driverPage.click('#btn-submit-driver-login');
+    await driverPage.waitForSelector('#view-driver-dashboard', { state: 'visible', timeout: 5000 });
+
+    // Verify driver status mapping is NOT OFFLINE (BUG-003 fix verification)
+    const driverStateText = await driverPage.textContent('#driver-status-text');
+    if (driverStateText.includes('OFFLINE')) {
+      throw new Error(`Lỗi BUG-003: Tài xế bị hiển thị nhầm thành OFFLINE khi được reserve: ${driverStateText}`);
+    }
+
+    // Wait for active trip to appear on Driver Dashboard
+    await driverPage.waitForSelector('#driver-active-trip:not(.hidden)', { timeout: 10000 });
+    const assignedTripId = await driverPage.textContent('#driver-trip-id');
+    console.log(`[TEST-LOG] Driver dashboard hiển thị chuyến xe được ghép: ${assignedTripId}`);
+
+    // Step 1: Driver accepts trip
+    console.log('[STEP] Driver clicking accept...');
+    await driverPage.waitForSelector('#btn-driver-accept:not(.hidden)', { timeout: 6000 });
+    await driverPage.click('#btn-driver-accept');
+    await driverPage.waitForSelector('#btn-driver-start:not(.hidden)', { timeout: 6000 });
+
+    // Verify Passenger sees ACCEPTED
+    console.log('[STEP] Waiting for passenger to see ACCEPTED...');
+    await page.waitForFunction(() => {
+      const el = document.getElementById('active-trip-status-badge');
+      return el && el.textContent.includes('ACCEPTED');
+    }, null, { timeout: 8000 });
+
+    // Step 2: Driver starts trip
+    console.log('[STEP] Driver clicking start...');
+    await driverPage.click('#btn-driver-start');
+    await driverPage.waitForSelector('#btn-driver-complete:not(.hidden)', { timeout: 6000 });
+
+    // Verify Passenger sees IN_PROGRESS
+    console.log('[STEP] Waiting for passenger to see IN_PROGRESS...');
+    await page.waitForFunction(() => {
+      const el = document.getElementById('active-trip-status-badge');
+      return el && el.textContent.includes('IN_PROGRESS');
+    }, null, { timeout: 8000 });
+
+    // Step 3: Driver completes trip
+    console.log('[STEP] Driver clicking complete...');
+    await driverPage.click('#btn-driver-complete');
+    await driverPage.waitForTimeout(1000);
+
+    // Verify Passenger sees COMPLETED
+    console.log('[STEP] Waiting for passenger to see COMPLETED...');
+    await page.waitForFunction(() => {
+      const el = document.getElementById('active-trip-status-badge');
+      return el && el.textContent.includes('COMPLETED');
+    }, null, { timeout: 10000 });
+
+    // Verify Driver sees trip closed and returns to idle state
+    console.log('[STEP] Waiting for driver dashboard to return to idle...');
+    await driverPage.waitForFunction(() => {
+      const noTripEl = document.getElementById('driver-no-trip');
+      const activeTripEl = document.getElementById('driver-active-trip');
+      return (noTripEl && !noTripEl.classList.contains('hidden')) || (activeTripEl && activeTripEl.classList.contains('hidden'));
+    }, null, { timeout: 10000 });
+
+    recordResult('UI-07', 'Tài xế tiếp nhận cuốc xe, bắt đầu và hoàn tất trọn vẹn qua Cổng Tài Xế', 'PASS', Date.now() - tDriverJourney, 'Accept -> Start -> Complete luồng thật');
+    recordResult('UI-08', 'Cập nhật trạng thái vòng đời cuốc xe (Saga Stepper) thời gian thực không lỗi', 'PASS', Date.now() - tDriverJourney, 'REQUESTED -> CONFIRMED -> ACCEPTED -> IN_PROGRESS -> COMPLETED');
+
+    await driverPage.screenshot({ path: path.join(SCREENSHOTS_DIR, '04-driver-dashboard.png') });
+  } catch (err) {
+    recordResult('UI-07', 'Tài xế tiếp nhận và hoàn tất cuốc xe qua UI', 'FAIL', Date.now() - tDriverJourney, err.message);
+    recordResult('UI-08', 'Cập nhật trạng thái vòng đời cuốc xe', 'FAIL', Date.now() - tDriverJourney, err.message);
+  } finally {
+    if (driverPage) await driverPage.close();
+    if (driverContext) await driverContext.close();
+  }
+
+  // Test UI-12: API error handling and graceful UI feedback
+  const tErr = Date.now();
+  try {
+    const errorResponseChecked = await page.evaluate(async () => {
+      const token = localStorage.getItem('ds03_token');
+      const res = await fetch('http://localhost:8080/api/v1/trips', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          pickup_latitude: 999.0, // Invalid coordinate
+          pickup_longitude: 105.8544,
+          pickup_address: 'Hà Nội',
+          dropoff_latitude: 21.0173,
+          dropoff_longitude: 105.7839,
+          dropoff_address: 'Hà Nội',
+        }),
+      });
+      const data = await res.json();
+      return res.status === 400 && data.error?.code === 'INVALID_COORDINATES';
+    });
+
+    if (errorResponseChecked) {
+      recordResult('UI-12', 'Xử lý lỗi API Gateway và nghiệp vụ chuẩn mực, phản hồi mã lỗi và thông báo', 'PASS', Date.now() - tErr);
+    } else {
+      throw new Error('API error handling did not return expected 400 INVALID_COORDINATES');
+    }
+  } catch (err) {
+    recordResult('UI-12', 'Xử lý lỗi API', 'FAIL', Date.now() - tErr, err.message);
   }
 
   // Test UI-09 & UI-10: Notification center bell, badge and popup

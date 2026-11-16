@@ -3,7 +3,7 @@
   "users": [
     {
       "name": "ds03_admin",
-      "password_hash": "Dbs2YR9wcIEMRQFPsdf9O2Mh8QOvT2k7qfu/Ff3ZpPfhUOcG",
+      "password_hash": "Rs3e1XJ/6sGYIIZGtjVJoex6IE0G7m/iTzAXEFk9SIsGhHdz",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
       "tags": [
         "administrator"
@@ -12,7 +12,7 @@
     },
     {
       "name": "ds03_app",
-      "password_hash": "AX4KiIXY5QgOGZ4XG/qmMFPXOfMJxNu+C7lJvDfCEff2GLN1",
+      "password_hash": "ZZdNS/e8/E2RBrIxuwHpxe9H9Jg3fHp4ZIL2XfrMV4eUH43P",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
       "tags": [],
       "limits": {}

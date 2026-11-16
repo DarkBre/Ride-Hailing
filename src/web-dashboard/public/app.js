@@ -14,6 +14,9 @@ const state = {
   pickupCoords: { lat: 21.0285, lon: 105.8544, address: 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội' },
   dropoffCoords: { lat: 21.0173, lon: 105.7839, address: 'Landmark 72, Nam Từ Liêm, Hà Nội' },
   mapPickMode: null, // 'pickup' | 'dropoff' | null
+  driverActiveTrip: null,
+  driverGpsInterval: null,
+  driverTripPollInterval: null,
   notifications: [],
   readNotifIds: new Set(),
   sseSource: null,
@@ -30,6 +33,7 @@ let passengerRouteLine = null;
 let driverMap = null;
 let driverSelfMarker = null;
 let driverTripPickupMarker = null;
+let driverTripDropoffMarker = null;
 let driverRouteLine = null;
 
 // Helper: Haversine distance in km
@@ -117,7 +121,8 @@ async function apiRequest(path, { method = 'GET', body = null, token = state.tok
       corrId
     );
 
-    return { ok: res.ok, status: res.status, data: json.data || json, error: json.error, corrId };
+    const responseData = json.data !== undefined ? json.data : json;
+    return { ok: res.ok, status: res.status, data: responseData, error: json.error, corrId };
   } catch (err) {
     logDiagnostic('network', `Lỗi kết nối ${method} ${path}: ${err.message}`);
     return { ok: false, status: 0, error: { message: `Không thể kết nối đến máy chủ (${err.message})` } };
@@ -162,9 +167,13 @@ function navigateTo(viewName, pushHistory = true) {
     setTimeout(initPassengerMap, 100);
     fetchWalletBalance();
     updateFarePreview();
+    fetchPassengerActiveTrip();
+    stopDriverMonitoring();
   } else if (viewName === 'driver-dashboard') {
     setTimeout(initDriverMap, 100);
-    fetchDriverProfile();
+    startDriverMonitoring();
+  } else {
+    stopDriverMonitoring();
   }
 
   updateSessionUI();
@@ -344,12 +353,22 @@ function handleIncomingSSEEvent(data) {
 // Interactive Map Implementation (Leaflet Hanoi)
 function initPassengerMap() {
   const mapContainer = document.getElementById('passenger-map');
-  if (!mapContainer || passengerMap) {
-    if (passengerMap) passengerMap.invalidateSize();
+  if (!mapContainer) return;
+  if (passengerMap) {
+    passengerMap.invalidateSize();
     return;
   }
 
-  passengerMap = L.map('passenger-map').setView([21.0285, 105.8544], 13);
+  passengerMap = L.map('passenger-map', {
+    center: [21.0285, 105.8544],
+    zoom: 13,
+    dragging: true,
+    tap: true,
+    touchZoom: true,
+    scrollWheelZoom: true,
+    doubleClickZoom: true,
+  });
+
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 18,
@@ -357,19 +376,18 @@ function initPassengerMap() {
 
   // Click on map to pick location
   passengerMap.on('click', (e) => {
+    if (!state.mapPickMode) return;
     const { lat, lng } = e.latlng;
     const roundedLat = Math.round(lat * 10000) / 10000;
     const roundedLng = Math.round(lng * 10000) / 10000;
 
     if (state.mapPickMode === 'pickup') {
       setPickupCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
-      state.mapPickMode = null;
-      document.body.style.cursor = 'default';
+      cancelMapPickMode();
       showToast(`Đã chọn điểm đón tại (${roundedLat}, ${roundedLng})`, 'success');
     } else if (state.mapPickMode === 'dropoff') {
       setDropoffCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
-      state.mapPickMode = null;
-      document.body.style.cursor = 'default';
+      cancelMapPickMode();
       showToast(`Đã chọn điểm đến tại (${roundedLat}, ${roundedLng})`, 'success');
     }
   });
@@ -377,10 +395,17 @@ function initPassengerMap() {
   renderPassengerMapMarkers();
 }
 
+function cancelMapPickMode() {
+  state.mapPickMode = null;
+  document.body.style.cursor = 'default';
+  document.getElementById('pick-mode-banner')?.classList.add('hidden');
+  document.getElementById('btn-cancel-pick')?.classList.add('hidden');
+}
+
 function renderPassengerMapMarkers() {
   if (!passengerMap) return;
 
-  // Pickup marker
+  // Pickup marker (Draggable)
   if (!passengerPickupMarker) {
     const pickupIcon = L.divIcon({
       className: 'custom-marker-pin marker-pickup',
@@ -388,15 +413,26 @@ function renderPassengerMapMarkers() {
       iconSize: [28, 28],
       iconAnchor: [14, 28],
     });
-    passengerPickupMarker = L.marker([state.pickupCoords.lat, state.pickupCoords.lon], { icon: pickupIcon })
+    passengerPickupMarker = L.marker([state.pickupCoords.lat, state.pickupCoords.lon], {
+      icon: pickupIcon,
+      draggable: true,
+    })
       .addTo(passengerMap)
-      .bindPopup('<b>Điểm đón</b><br>' + state.pickupCoords.address);
+      .bindPopup('<b>Điểm đón (Có thể kéo)</b><br>' + state.pickupCoords.address);
+
+    passengerPickupMarker.on('dragend', (e) => {
+      const { lat, lng } = e.target.getLatLng();
+      const roundedLat = Math.round(lat * 10000) / 10000;
+      const roundedLng = Math.round(lng * 10000) / 10000;
+      setPickupCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
+      showToast(`Đã kéo điểm đón đến (${roundedLat}, ${roundedLng})`, 'info');
+    });
   } else {
     passengerPickupMarker.setLatLng([state.pickupCoords.lat, state.pickupCoords.lon]);
-    passengerPickupMarker.setPopupContent('<b>Điểm đón</b><br>' + state.pickupCoords.address);
+    passengerPickupMarker.setPopupContent('<b>Điểm đón (Có thể kéo)</b><br>' + state.pickupCoords.address);
   }
 
-  // Dropoff marker
+  // Dropoff marker (Draggable)
   if (!passengerDropoffMarker) {
     const dropoffIcon = L.divIcon({
       className: 'custom-marker-pin marker-dropoff',
@@ -404,12 +440,23 @@ function renderPassengerMapMarkers() {
       iconSize: [28, 28],
       iconAnchor: [14, 14],
     });
-    passengerDropoffMarker = L.marker([state.dropoffCoords.lat, state.dropoffCoords.lon], { icon: dropoffIcon })
+    passengerDropoffMarker = L.marker([state.dropoffCoords.lat, state.dropoffCoords.lon], {
+      icon: dropoffIcon,
+      draggable: true,
+    })
       .addTo(passengerMap)
-      .bindPopup('<b>Điểm đến</b><br>' + state.dropoffCoords.address);
+      .bindPopup('<b>Điểm đến (Có thể kéo)</b><br>' + state.dropoffCoords.address);
+
+    passengerDropoffMarker.on('dragend', (e) => {
+      const { lat, lng } = e.target.getLatLng();
+      const roundedLat = Math.round(lat * 10000) / 10000;
+      const roundedLng = Math.round(lng * 10000) / 10000;
+      setDropoffCoordinates(roundedLat, roundedLng, `Toạ độ (${roundedLat}, ${roundedLng})`);
+      showToast(`Đã kéo điểm đến đến (${roundedLat}, ${roundedLng})`, 'info');
+    });
   } else {
     passengerDropoffMarker.setLatLng([state.dropoffCoords.lat, state.dropoffCoords.lon]);
-    passengerDropoffMarker.setPopupContent('<b>Điểm đến</b><br>' + state.dropoffCoords.address);
+    passengerDropoffMarker.setPopupContent('<b>Điểm đến (Có thể kéo)</b><br>' + state.dropoffCoords.address);
   }
 
   // Route Polyline
@@ -483,12 +530,22 @@ function updateFarePreview() {
 // Driver Map Implementation
 function initDriverMap() {
   const mapContainer = document.getElementById('driver-map');
-  if (!mapContainer || driverMap) {
-    if (driverMap) driverMap.invalidateSize();
+  if (!mapContainer) return;
+  if (driverMap) {
+    driverMap.invalidateSize();
     return;
   }
 
-  driverMap = L.map('driver-map').setView([state.driverCoords.lat, state.driverCoords.lon], 14);
+  driverMap = L.map('driver-map', {
+    center: [state.driverCoords.lat, state.driverCoords.lon],
+    zoom: 14,
+    dragging: true,
+    tap: true,
+    touchZoom: true,
+    scrollWheelZoom: true,
+    doubleClickZoom: true,
+  });
+
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 18,
@@ -501,9 +558,95 @@ function initDriverMap() {
     iconAnchor: [15, 15],
   });
 
-  driverSelfMarker = L.marker([state.driverCoords.lat, state.driverCoords.lon], { icon: carIcon })
+  driverSelfMarker = L.marker([state.driverCoords.lat, state.driverCoords.lon], {
+    icon: carIcon,
+    draggable: true,
+  })
     .addTo(driverMap)
-    .bindPopup('<b>Vị trí của bạn</b><br>Đang trực tuyến');
+    .bindPopup('<b>Vị trí xe của bạn (Có thể kéo)</b><br>Kéo thả để cập nhật toạ độ GPS');
+
+  driverSelfMarker.on('dragend', async (e) => {
+    const { lat, lng } = e.target.getLatLng();
+    state.driverCoords.lat = Math.round(lat * 10000) / 10000;
+    state.driverCoords.lon = Math.round(lng * 10000) / 10000;
+    await sendDriverGpsHeartbeat();
+    showToast(`Đã cập nhật vị trí GPS tài xế: (${state.driverCoords.lat}, ${state.driverCoords.lon})`, 'success');
+  });
+}
+
+function renderDriverTripRoute(trip) {
+  if (!driverMap) return;
+
+  const pLat = Number(trip.pickup_latitude);
+  const pLon = Number(trip.pickup_longitude);
+  const dLat = Number(trip.dropoff_latitude);
+  const dLon = Number(trip.dropoff_longitude);
+
+  if (isNaN(pLat) || isNaN(pLon) || isNaN(dLat) || isNaN(dLon)) return;
+
+  // Pickup marker
+  if (!driverTripPickupMarker) {
+    const pIcon = L.divIcon({
+      className: 'custom-marker-pin marker-pickup',
+      html: '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/></svg>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 26],
+    });
+    driverTripPickupMarker = L.marker([pLat, pLon], { icon: pIcon })
+      .addTo(driverMap)
+      .bindPopup('<b>Điểm đón khách</b><br>' + (trip.pickup_address || ''));
+  } else {
+    driverTripPickupMarker.setLatLng([pLat, pLon]);
+    driverTripPickupMarker.setPopupContent('<b>Điểm đón khách</b><br>' + (trip.pickup_address || ''));
+  }
+
+  // Dropoff marker
+  if (!driverTripDropoffMarker) {
+    const dIcon = L.divIcon({
+      className: 'custom-marker-pin marker-dropoff',
+      html: '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    });
+    driverTripDropoffMarker = L.marker([dLat, dLon], { icon: dIcon })
+      .addTo(driverMap)
+      .bindPopup('<b>Điểm trả khách</b><br>' + (trip.dropoff_address || ''));
+  } else {
+    driverTripDropoffMarker.setLatLng([dLat, dLon]);
+    driverTripDropoffMarker.setPopupContent('<b>Điểm trả khách</b><br>' + (trip.dropoff_address || ''));
+  }
+
+  // Route polyline from pickup to dropoff
+  const latlngs = [[pLat, pLon], [dLat, dLon]];
+  if (!driverRouteLine) {
+    driverRouteLine = L.polyline(latlngs, {
+      color: '#38bdf8',
+      weight: 4,
+      opacity: 0.85,
+      dashArray: '6, 8',
+    }).addTo(driverMap);
+  } else {
+    driverRouteLine.setLatLngs(latlngs);
+  }
+
+  driverMap.fitBounds(L.latLngBounds([[pLat, pLon], [dLat, dLon], [state.driverCoords.lat, state.driverCoords.lon]]), {
+    padding: [40, 40],
+  });
+}
+
+function clearDriverTripRoute() {
+  if (driverTripPickupMarker && driverMap) {
+    driverMap.removeLayer(driverTripPickupMarker);
+    driverTripPickupMarker = null;
+  }
+  if (driverTripDropoffMarker && driverMap) {
+    driverMap.removeLayer(driverTripDropoffMarker);
+    driverTripDropoffMarker = null;
+  }
+  if (driverRouteLine && driverMap) {
+    driverMap.removeLayer(driverRouteLine);
+    driverRouteLine = null;
+  }
 }
 
 // Passenger Booking Flow
@@ -615,7 +758,7 @@ function startTripPolling(tripId) {
   stopTripPolling();
   state.pollingInterval = setInterval(async () => {
     const res = await apiRequest(`/trips/${tripId}`);
-    if (res.ok && res.data) {
+    if (res.ok && res.data && res.data.id) {
       updateActiveTripStatus(res.data.status);
     }
   }, 2000);
@@ -625,6 +768,21 @@ function stopTripPolling() {
   if (state.pollingInterval) {
     clearInterval(state.pollingInterval);
     state.pollingInterval = null;
+  }
+}
+
+async function fetchPassengerActiveTrip() {
+  if (!state.token || state.user?.role !== 'PASSENGER') return;
+  const res = await apiRequest('/trips/active');
+  if (res.ok && res.data && res.data.id) {
+    state.activeTrip = res.data;
+    showActiveTripUI(res.data);
+    startTripPolling(res.data.id);
+  } else {
+    state.activeTrip = null;
+    stopTripPolling();
+    document.getElementById('passenger-active-trip-section')?.classList.add('hidden');
+    document.getElementById('passenger-booking-section')?.classList.remove('hidden');
   }
 }
 
@@ -695,11 +853,25 @@ async function fetchDriverProfile() {
       if (state.driverStatus === 'AVAILABLE') {
         statusTextEl.textContent = 'AVAILABLE';
         statusTextEl.className = 'text-[11px] font-mono font-bold text-emerald-400';
+        toggleBtn.disabled = false;
         toggleBtn.textContent = 'Đang Sẵn Sàng (Bấm để Nghỉ)';
         toggleBtn.className = 'flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]';
+      } else if (state.driverStatus === 'RESERVED') {
+        statusTextEl.textContent = 'RESERVED (Đang giữ chuyến)';
+        statusTextEl.className = 'text-[11px] font-mono font-bold text-amber-400';
+        toggleBtn.disabled = true;
+        toggleBtn.textContent = 'Đang giữ chuyến (Chờ xác nhận)...';
+        toggleBtn.className = 'flex-1 bg-amber-600/30 text-amber-300 text-xs font-semibold py-2 rounded-lg border border-amber-500/30 cursor-not-allowed';
+      } else if (state.driverStatus === 'BUSY') {
+        statusTextEl.textContent = 'BUSY (Đang phục vụ)';
+        statusTextEl.className = 'text-[11px] font-mono font-bold text-sky-400';
+        toggleBtn.disabled = true;
+        toggleBtn.textContent = 'Đang phục vụ chuyến đi...';
+        toggleBtn.className = 'flex-1 bg-sky-600/30 text-sky-300 text-xs font-semibold py-2 rounded-lg border border-sky-500/30 cursor-not-allowed';
       } else {
         statusTextEl.textContent = 'OFFLINE';
         statusTextEl.className = 'text-[11px] font-mono font-bold text-slate-400';
+        toggleBtn.disabled = false;
         toggleBtn.textContent = 'Đang Nghỉ (Bấm để Sẵn Sàng)';
         toggleBtn.className = 'flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]';
       }
@@ -723,6 +895,15 @@ async function handleToggleDriverStatus() {
   }
 }
 
+async function sendDriverGpsHeartbeat() {
+  if (!state.token || state.user?.role !== 'DRIVER') return;
+  if (state.driverStatus !== 'AVAILABLE' && state.driverStatus !== 'BUSY' && state.driverStatus !== 'RESERVED') return;
+  await apiRequest('/drivers/location', {
+    method: 'PUT',
+    body: { latitude: state.driverCoords.lat, longitude: state.driverCoords.lon },
+  });
+}
+
 async function handleUpdateDriverGPS() {
   const res = await apiRequest('/drivers/location', {
     method: 'PUT',
@@ -733,6 +914,145 @@ async function handleUpdateDriverGPS() {
     showToast('Đã cập nhật toạ độ GPS tài xế thành công!', 'success');
   } else {
     showToast(res.error?.message || 'Cập nhật toạ độ thất bại', 'error');
+  }
+}
+
+function startDriverMonitoring() {
+  stopDriverMonitoring();
+  fetchDriverProfile();
+  pollDriverActiveTrip();
+  sendDriverGpsHeartbeat();
+  state.driverTripPollInterval = setInterval(pollDriverActiveTrip, 2500);
+  state.driverGpsInterval = setInterval(sendDriverGpsHeartbeat, 15000);
+}
+
+function stopDriverMonitoring() {
+  if (state.driverTripPollInterval) {
+    clearInterval(state.driverTripPollInterval);
+    state.driverTripPollInterval = null;
+  }
+  if (state.driverGpsInterval) {
+    clearInterval(state.driverGpsInterval);
+    state.driverGpsInterval = null;
+  }
+}
+
+async function pollDriverActiveTrip() {
+  if (!state.token || state.user?.role !== 'DRIVER') return;
+  const res = await apiRequest('/trips/active');
+  const noTripEl = document.getElementById('driver-no-trip');
+  const activeTripEl = document.getElementById('driver-active-trip');
+
+  if (res.ok && res.data && res.data.id) {
+    const trip = res.data;
+    state.driverActiveTrip = trip;
+
+    noTripEl?.classList.add('hidden');
+    activeTripEl?.classList.remove('hidden');
+
+    const idEl = document.getElementById('driver-trip-id');
+    const passengerEl = document.getElementById('driver-passenger-name');
+    const fareEl = document.getElementById('driver-trip-fare');
+    const pickupEl = document.getElementById('driver-trip-pickup');
+    const dropoffEl = document.getElementById('driver-trip-dropoff');
+    const badgeEl = document.getElementById('driver-trip-badge');
+
+    if (idEl) idEl.textContent = trip.id;
+    if (passengerEl) passengerEl.textContent = trip.passenger_name || 'Khách hàng DS03';
+    if (fareEl) fareEl.textContent = `${Number(trip.fare || trip.estimated_fare || 0).toLocaleString('vi-VN')} đ`;
+    if (pickupEl) pickupEl.textContent = trip.pickup_address || `(${trip.pickup_latitude}, ${trip.pickup_longitude})`;
+    if (dropoffEl) dropoffEl.textContent = trip.dropoff_address || `(${trip.dropoff_latitude}, ${trip.dropoff_longitude})`;
+    if (badgeEl) badgeEl.textContent = trip.status;
+
+    // Driver action buttons based on trip status
+    const btnAccept = document.getElementById('btn-driver-accept');
+    const btnStart = document.getElementById('btn-driver-start');
+    const btnComplete = document.getElementById('btn-driver-complete');
+
+    if (btnAccept && btnStart && btnComplete) {
+      if (['DRIVER_ASSIGNED', 'CONFIRMED'].includes(trip.status)) {
+        btnAccept.classList.remove('hidden');
+        btnStart.classList.add('hidden');
+        btnComplete.classList.add('hidden');
+      } else if (trip.status === 'ACCEPTED') {
+        btnAccept.classList.add('hidden');
+        btnStart.classList.remove('hidden');
+        btnComplete.classList.add('hidden');
+      } else if (trip.status === 'IN_PROGRESS') {
+        btnAccept.classList.add('hidden');
+        btnStart.classList.add('hidden');
+        btnComplete.classList.remove('hidden');
+      } else {
+        btnAccept.classList.add('hidden');
+        btnStart.classList.add('hidden');
+        btnComplete.classList.add('hidden');
+      }
+    }
+
+    renderDriverTripRoute(trip);
+  } else {
+    state.driverActiveTrip = null;
+    noTripEl?.classList.remove('hidden');
+    activeTripEl?.classList.add('hidden');
+    clearDriverTripRoute();
+  }
+}
+
+async function handleDriverAcceptTrip() {
+  if (!state.driverActiveTrip) return;
+  const tripId = state.driverActiveTrip.id;
+  const btn = document.getElementById('btn-driver-accept');
+  if (btn) btn.disabled = true;
+
+  const res = await apiRequest(`/trips/${tripId}/accept`, { method: 'POST' });
+  if (btn) btn.disabled = false;
+
+  if (res.ok) {
+    showToast('Đã nhận cuốc xe! Vui lòng di chuyển đến điểm đón.', 'success');
+    await pollDriverActiveTrip();
+    await fetchDriverProfile();
+  } else {
+    showToast(res.error?.message || 'Không thể nhận cuốc xe', 'error');
+  }
+}
+
+async function handleDriverStartTrip() {
+  if (!state.driverActiveTrip) return;
+  const tripId = state.driverActiveTrip.id;
+  const btn = document.getElementById('btn-driver-start');
+  if (btn) btn.disabled = true;
+
+  const res = await apiRequest(`/trips/${tripId}/start`, { method: 'POST' });
+  if (btn) btn.disabled = false;
+
+  if (res.ok) {
+    showToast('Đã bắt đầu chuyến đi! Chúc bạn lái xe an toàn.', 'success');
+    await pollDriverActiveTrip();
+    await fetchDriverProfile();
+  } else {
+    showToast(res.error?.message || 'Không thể bắt đầu chuyến đi', 'error');
+  }
+}
+
+async function handleDriverCompleteTrip() {
+  if (!state.driverActiveTrip) return;
+  const tripId = state.driverActiveTrip.id;
+  const btn = document.getElementById('btn-driver-complete');
+  if (btn) btn.disabled = true;
+
+  const res = await apiRequest(`/trips/${tripId}/complete`, { method: 'POST' });
+  if (btn) btn.disabled = false;
+
+  if (res.ok) {
+    showToast('Chúc mừng! Chuyến đi đã hoàn tất thành công.', 'success');
+    state.driverActiveTrip = null;
+    document.getElementById('driver-no-trip')?.classList.remove('hidden');
+    document.getElementById('driver-active-trip')?.classList.add('hidden');
+    clearDriverTripRoute();
+    await pollDriverActiveTrip();
+    await fetchDriverProfile();
+  } else {
+    showToast(res.error?.message || 'Không thể hoàn tất chuyến đi', 'error');
   }
 }
 
@@ -906,6 +1226,8 @@ function handleLogout() {
 
   state.token = null;
   state.user = null;
+  state.activeTrip = null;
+  state.driverActiveTrip = null;
   localStorage.removeItem('ds03_token');
   localStorage.removeItem('ds03_user');
 
@@ -914,6 +1236,13 @@ function handleLogout() {
     state.sseSource = null;
   }
   stopTripPolling();
+  stopDriverMonitoring();
+
+  // Reset trip view states
+  document.getElementById('passenger-active-trip-section')?.classList.add('hidden');
+  document.getElementById('passenger-booking-section')?.classList.remove('hidden');
+  document.getElementById('driver-active-trip')?.classList.add('hidden');
+  document.getElementById('driver-no-trip')?.classList.remove('hidden');
 
   showToast('Đã đăng xuất khỏi hệ thống.', 'info');
   navigateTo('landing');
@@ -929,7 +1258,7 @@ async function restoreSession() {
 
   state.token = savedToken;
   const res = await apiRequest('/auth/me');
-  if (res.ok && res.data) {
+  if (res.ok && res.data && res.data.id) {
     state.user = res.data;
     localStorage.setItem('ds03_user', JSON.stringify(state.user));
     loadReadNotifs();
@@ -1093,13 +1422,30 @@ function bindEvents() {
     showToast('Đã đánh dấu tất cả thông báo là đã đọc', 'info');
   });
 
-  // Diagnostics Drawer
-  document.getElementById('btn-toggle-diagnostics')?.addEventListener('click', () => {
-    document.getElementById('diagnostics-drawer')?.classList.toggle('hidden');
-    pollDiagnosticsHealth();
-  });
+  // Diagnostics & Live Distribution Drawer
+  const toggleDiagnostics = () => {
+    const drawer = document.getElementById('diagnostics-drawer');
+    const backdrop = document.getElementById('diagnostics-backdrop');
+    if (!drawer) return;
+    const isHidden = drawer.classList.contains('hidden');
+    if (isHidden) {
+      drawer.classList.remove('hidden');
+      backdrop?.classList.remove('hidden');
+      pollDiagnosticsHealth();
+    } else {
+      drawer.classList.add('hidden');
+      backdrop?.classList.add('hidden');
+    }
+  };
+
+  document.getElementById('btn-toggle-diagnostics')?.addEventListener('click', toggleDiagnostics);
   document.getElementById('btn-close-diagnostics')?.addEventListener('click', () => {
     document.getElementById('diagnostics-drawer')?.classList.add('hidden');
+    document.getElementById('diagnostics-backdrop')?.classList.add('hidden');
+  });
+  document.getElementById('diagnostics-backdrop')?.addEventListener('click', () => {
+    document.getElementById('diagnostics-drawer')?.classList.add('hidden');
+    document.getElementById('diagnostics-backdrop')?.classList.add('hidden');
   });
   document.getElementById('btn-clear-logs')?.addEventListener('click', () => {
     const container = document.getElementById('logs-container');
@@ -1156,19 +1502,40 @@ function bindEvents() {
   document.getElementById('btn-pick-pickup')?.addEventListener('click', () => {
     state.mapPickMode = 'pickup';
     document.body.style.cursor = 'crosshair';
+    const banner = document.getElementById('pick-mode-banner');
+    const bannerText = document.getElementById('pick-mode-text');
+    const cancelBtn = document.getElementById('btn-cancel-pick');
+    if (banner) banner.classList.remove('hidden');
+    if (bannerText) bannerText.textContent = 'Click lên bản đồ để chọn điểm đón';
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
     showToast('Hãy nhấp vào bản đồ để chọn điểm đón...', 'info');
   });
+
   document.getElementById('btn-pick-dropoff')?.addEventListener('click', () => {
     state.mapPickMode = 'dropoff';
     document.body.style.cursor = 'crosshair';
+    const banner = document.getElementById('pick-mode-banner');
+    const bannerText = document.getElementById('pick-mode-text');
+    const cancelBtn = document.getElementById('btn-cancel-pick');
+    if (banner) banner.classList.remove('hidden');
+    if (bannerText) bannerText.textContent = 'Click lên bản đồ để chọn điểm đến';
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
     showToast('Hãy nhấp vào bản đồ để chọn điểm đến...', 'info');
   });
+
+  document.getElementById('btn-cancel-pick')?.addEventListener('click', () => {
+    cancelMapPickMode();
+    showToast('Đã hủy chế độ chọn điểm', 'info');
+  });
+
   document.getElementById('btn-map-fit')?.addEventListener('click', () => {
     if (passengerMap && passengerRouteLine) {
       passengerMap.fitBounds(passengerRouteLine.getBounds(), { padding: [40, 40] });
     }
   });
+
   document.getElementById('btn-map-reset-points')?.addEventListener('click', () => {
+    cancelMapPickMode();
     setPickupCoordinates(21.0285, 105.8544, 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội');
     setDropoffCoordinates(21.0173, 105.7839, 'Landmark 72, Nam Từ Liêm, Hà Nội');
     showToast('Đã đặt lại điểm mẫu mặc định', 'info');
@@ -1204,9 +1571,30 @@ function bindEvents() {
     if (amount > 0) handleTopup(amount);
   });
 
-  // Driver Controls
+  // Driver Controls & Trip Actions
   document.getElementById('btn-toggle-driver-status')?.addEventListener('click', handleToggleDriverStatus);
   document.getElementById('btn-update-driver-gps')?.addEventListener('click', handleUpdateDriverGPS);
+  document.getElementById('btn-driver-accept')?.addEventListener('click', handleDriverAcceptTrip);
+  document.getElementById('btn-driver-start')?.addEventListener('click', handleDriverStartTrip);
+  document.getElementById('btn-driver-complete')?.addEventListener('click', handleDriverCompleteTrip);
+
+  // Responsive window resize for Leaflet maps
+  window.addEventListener('resize', () => {
+    if (passengerMap) passengerMap.invalidateSize();
+    if (driverMap) driverMap.invalidateSize();
+  });
+
+  // Keyboard shortcut: Escape key closes drawers and modals
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.getElementById('diagnostics-drawer')?.classList.add('hidden');
+      document.getElementById('diagnostics-backdrop')?.classList.add('hidden');
+      document.getElementById('notification-popover')?.classList.add('hidden');
+      document.getElementById('cancel-confirm-modal')?.classList.add('hidden');
+      document.getElementById('topup-modal')?.classList.add('hidden');
+      cancelMapPickMode();
+    }
+  });
 
   // Close modals on clicking backdrop
   window.addEventListener('click', (e) => {

@@ -37,8 +37,8 @@ const server = http.createServer((req, res) => {
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
-      // Support SPA client-side routing (fallback to index.html for extensionless routes)
-      if (!path.extname(pathname) || pathname.startsWith('/login') || pathname.startsWith('/passenger') || pathname.startsWith('/driver')) {
+      // Support SPA client-side routing (fallback to index.html only for extensionless routes)
+      if (!path.extname(pathname)) {
         const indexPath = path.join(PUBLIC_DIR, 'index.html');
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
