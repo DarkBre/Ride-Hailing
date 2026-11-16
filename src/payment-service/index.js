@@ -203,23 +203,23 @@ async function start() {
 
   // 2. Connect to RabbitMQ & setup topology
   broker = new PaymentBroker();
+  const wrappedHandler = async (envelope) => {
+    const result = await handleBrokerEvent(envelope);
+    notifyGateway({
+      type: 'PAYMENT_EVENT_PROCESSED',
+      service: config.SERVICE_NAME,
+      event_type: envelope.event_type,
+      event_id: envelope.event_id,
+      correlation_id: envelope.correlation_id,
+      result,
+    });
+    return result;
+  };
+  broker.messageHandler = wrappedHandler;
+
   try {
     await broker.connect();
     console.log(`[${new Date().toISOString()}] [payment-service] [INFO] Connected to RabbitMQ at ${config.RABBITMQ.url}`);
-
-    // Wrap event handler to also notify Gateway for real-time dashboard updates
-    const wrappedHandler = async (envelope) => {
-      const result = await handleBrokerEvent(envelope);
-      notifyGateway({
-        type: 'PAYMENT_EVENT_PROCESSED',
-        service: config.SERVICE_NAME,
-        event_type: envelope.event_type,
-        event_id: envelope.event_id,
-        correlation_id: envelope.correlation_id,
-        result,
-      });
-      return result;
-    };
 
     // Start Consumer for payment events
     await broker.startConsumer(wrappedHandler);

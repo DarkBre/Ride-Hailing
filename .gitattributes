@@ -1,0 +1,4 @@
+# Enforce LF for shell scripts to prevent container execution failures on Windows
+*.sh text eol=lf
+*.sql text eol=lf
+*.json text eol=lf
