@@ -1,199 +1,291 @@
 /* ==========================================================================
-   DS03 Dispatch & Operations Console - Impeccable Design System
-   Mode: Operate | Restrained Precision Dark Theme
+   DS03 Ride-Hailing Operations & Console — Unslop Design System
+   Product Character: Dependable, Precise, Urban
+   World: Urban Mobility & Night Asphalt
+   License: CC BY 4.0 (heydamir/unslop by Damir Sokolovsky)
    ========================================================================== */
 
 :root {
-  --color-canvas: #090d16;
-  --color-panel: #0f172a;
-  --color-panel-elevated: #1e293b;
-  --color-panel-hover: #334155;
-  --color-border: #1e293b;
-  --color-border-subtle: #334155;
-  --color-text-primary: #f8fafc;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
-  --color-accent-blue: #3b82f6;
-  --color-accent-emerald: #10b981;
-  --color-accent-amber: #f59e0b;
-  --color-accent-red: #ef4444;
+  /* Graphite Neutral Ramp */
+  --color-canvas: #121316;
+  --color-surface-deep: #0f0f10;
+  --color-surface-card: #18191d;
+  --color-surface-raised: #22242a;
+  --color-surface-hover: #2a2c34;
+  --color-hairline: rgba(240, 242, 245, 0.08);
+  --color-hairline-strong: rgba(240, 242, 245, 0.14);
+
+  /* Text Roles */
+  --color-text-primary: #f3f4f6;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+
+  /* Primary Accent: Signal Amber */
+  --color-accent: #f59e0b;
+  --color-accent-hover: #d97706;
+  --color-accent-subtle: rgba(245, 158, 11, 0.12);
+  --color-accent-border: rgba(245, 158, 11, 0.25);
+
+  /* Semantic Tones (Calm & Precise) */
+  --color-semantic-available: #10b981;
+  --color-semantic-reserved: #f59e0b;
+  --color-semantic-busy: #0ea5e9;
+  --color-semantic-offline: #64748b;
+  --color-semantic-error: #ef4444;
+
+  /* Nested Radii */
+  --radius-panel: 14px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-tag: 4px;
+
+  /* Motion Curve */
+  --ease-urban: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Heading Hierarchy (Ensures high-craft 1.5x scale step) */
-h1 {
-  font-size: 1.5rem !important;
-  line-height: 2rem !important;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
-
-h2 {
-  font-size: 0.875rem !important;
-  line-height: 1.25rem !important;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+/* Base Body & Reset */
+body {
+  background-color: var(--color-canvas) !important;
+  color: var(--color-text-primary) !important;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  letter-spacing: 0;
 }
 
 /* Custom Text Selection */
 ::selection {
-  background: rgba(59, 130, 246, 0.35);
+  background: rgba(245, 158, 11, 0.25);
   color: #ffffff;
 }
 
-/* Tabular Numerals for Metrics and Identifiers */
+/* Tabular Numerals for Metrics, Fares, Timestamps, and Coordinates */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-/* Clean accessible scrollbar */
+/* Clean Restrained Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #090d16;
+  background: var(--color-canvas);
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: var(--color-surface-raised);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #373a44;
 }
 
-/* Leaflet Map overrides for dark theme */
+/* Focus Visibility Ring */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* ==========================================================================
+   Leaflet Map — Natural Night Asphalt Theme
+   Eliminates purple haze, produces crisp street names and road contours
+   ========================================================================== */
 .leaflet-container {
-  background-color: #090d16 !important;
+  background-color: var(--color-canvas) !important;
   font-family: inherit;
 }
 
 .leaflet-tile {
-  filter: brightness(0.7) invert(1) contrast(2.6) hue-rotate(200deg) saturate(0.2) brightness(0.75);
+  filter: brightness(0.65) invert(1) contrast(1.8) hue-rotate(180deg) saturate(0.15) brightness(0.85);
 }
 
 .leaflet-popup-content-wrapper {
-  background: #0f172a !important;
-  color: #f8fafc !important;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  background: var(--color-surface-card) !important;
+  color: var(--color-text-primary) !important;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-control);
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.65);
 }
 
 .leaflet-popup-tip {
-  background: #0f172a !important;
-  border: 1px solid #334155;
+  background: var(--color-surface-card) !important;
+  border: 1px solid var(--color-hairline-strong);
 }
 
-/* Custom Marker Pin Styles */
+/* Custom Station Node Markers */
 .custom-marker-pin {
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   cursor: grab;
   touch-action: none;
+  transition: transform 0.15s var(--ease-urban);
+}
+
+.custom-marker-pin:hover {
+  transform: scale(1.08);
 }
 
 .custom-marker-pin:active {
   cursor: grabbing;
+  transform: scale(0.96);
 }
 
+/* Station Node: Pickup (Emerald Ring with Solid White Core) */
 .marker-pickup {
   background-color: #10b981;
   border: 2px solid #ffffff;
   color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(16, 185, 129, 0.35);
 }
 
+/* Station Node: Dropoff (Signal Amber with Crisp White Border) */
 .marker-dropoff {
   background-color: #f59e0b;
   border: 2px solid #ffffff;
   color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(245, 158, 11, 0.35);
 }
 
+/* Vehicle Node: Driver (Sky Blue with Contrast Ring) */
 .marker-driver {
-  background-color: #0284c7;
+  background-color: #0ea5e9;
   border: 2px solid #ffffff;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(14, 165, 233, 0.35);
+}
+
+/* Transit Polyline Styling */
+.transit-route-casing {
+  stroke: #0a0b0d;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+
+.transit-route-core {
+  stroke: #f59e0b;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.95;
+}
+
+/* ==========================================================================
+   Buttons & Interactive Elements
+   ========================================================================== */
+
+/* Primary CTA — Signal Amber with High-Contrast Text */
+.btn-primary-cta {
+  background-color: #f59e0b !important;
+  color: #121316 !important;
+  font-weight: 600;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: background-color 0.15s var(--ease-urban), transform 0.1s var(--ease-urban);
+}
+
+.btn-primary-cta:hover {
+  background-color: #fbbf24 !important;
+}
+
+.btn-primary-cta:active {
+  transform: scale(0.98);
+}
+
+/* Secondary Button — Graphite Raised Surface with Hairline */
+.btn-secondary {
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: background-color 0.15s var(--ease-urban), border-color 0.15s var(--ease-urban), transform 0.1s var(--ease-urban);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-surface-hover);
+  border-color: var(--color-hairline-strong);
   color: #ffffff;
 }
 
-/* Stepper state styling (No decorative glowing text shadows) */
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+/* Mode Switcher Buttons */
+#btn-mode-pan.bg-blue-600 {
+  background-color: #22242a !important;
+  color: #f3f4f6 !important;
+  border: 1px solid rgba(240, 242, 245, 0.16) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+#btn-mode-pin.bg-emerald-600 {
+  background-color: #10b981 !important;
+  color: #064e3b !important;
+  border: 1px solid rgba(16, 185, 129, 0.5) !important;
+  font-weight: 600;
+}
+
+/* Stepper state styling */
 .step-item {
   position: relative;
-  transition: color 0.15s ease;
+  transition: color 0.15s var(--ease-urban);
 }
 
 .step-active {
-  background-color: rgba(16, 185, 129, 0.15) !important;
-  color: #10b981 !important;
-  border-color: rgba(16, 185, 129, 0.4) !important;
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  color: #f59e0b !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
   font-weight: 600;
 }
 
 .step-failed {
-  background-color: rgba(239, 68, 68, 0.15) !important;
+  background-color: rgba(239, 68, 68, 0.12) !important;
   color: #ef4444 !important;
-  border-color: rgba(239, 68, 68, 0.4) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
   font-weight: 600;
 }
 
-/* Telemetry log entries (No 3px asymmetric border-left slop) */
+/* Telemetry Log Entries */
 .log-entry {
   padding: 8px 10px;
-  border-radius: 6px;
-  background: #0b1120;
-  border: 1px solid #1e293b;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  border-radius: var(--radius-tag);
+  background: #141519;
+  border: 1px solid var(--color-hairline);
+  transition: background-color 0.15s var(--ease-urban), border-color 0.15s var(--ease-urban);
 }
 
 .log-entry:hover {
-  background: #111c33;
-  border-color: #334155;
+  background: var(--color-surface-card);
+  border-color: var(--color-hairline-strong);
 }
 
-.log-gateway { border-color: rgba(56, 189, 248, 0.3); }
-.log-payment { border-color: rgba(16, 185, 129, 0.3); }
-.log-trip { border-color: rgba(245, 158, 11, 0.3); }
-.log-driver { border-color: rgba(168, 85, 247, 0.3); }
-.log-matching { border-color: rgba(236, 72, 153, 0.3); }
-.log-broker { border-color: rgba(99, 102, 241, 0.3); }
+.log-gateway { border-left: 2px solid #0ea5e9; }
+.log-payment { border-left: 2px solid #10b981; }
+.log-trip { border-left: 2px solid #f59e0b; }
+.log-driver { border-left: 2px solid #a855f7; }
+.log-matching { border-left: 2px solid #ec4899; }
+.log-broker { border-left: 2px solid #6366f1; }
 
 /* Toast Notifications */
 .toast-item {
   pointer-events: auto;
-  max-width: 360px;
+  max-width: 380px;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-size: 12px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  background-color: var(--color-surface-card);
+  border: 1px solid var(--color-hairline-strong);
+  color: var(--color-text-primary);
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  transition: all 0.2s ease;
+  transition: opacity 0.2s var(--ease-urban), transform 0.2s var(--ease-urban);
 }
 
-.toast-info {
-  background: #0f172a;
-  border: 1px solid #334155;
-  color: #f8fafc;
-}
-
-.toast-success {
-  background: #064e3b;
-  border: 1px solid #059669;
-  color: #ecfdf5;
-}
-
-.toast-error {
-  background: #7f1d1d;
-  border: 1px solid #dc2626;
-  color: #fef2f2;
-}
-
-/* Focus outlines */
-button:focus-visible,
-input:focus-visible,
-select:focus-visible {
-  outline: 2px solid #3b82f6;
-  outline-offset: 1px;
-}
+.toast-success { border-left: 3px solid #10b981; }
+.toast-error { border-left: 3px solid #ef4444; }
+.toast-warning { border-left: 3px solid #f59e0b; }
+.toast-info { border-left: 3px solid #0ea5e9; }

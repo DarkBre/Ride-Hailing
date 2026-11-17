@@ -28,12 +28,14 @@ let passengerMap = null;
 let passengerPickupMarker = null;
 let passengerDropoffMarker = null;
 let passengerDriverMarker = null;
+let passengerRouteCasing = null;
 let passengerRouteLine = null;
 
 let driverMap = null;
 let driverSelfMarker = null;
 let driverTripPickupMarker = null;
 let driverTripDropoffMarker = null;
+let driverRouteCasing = null;
 let driverRouteLine = null;
 
 // Helper: Haversine distance in km
@@ -438,20 +440,20 @@ function initPassengerMap() {
 // Open Pin Dropdown Popup
 function openPinSelectionPopup(latlng, roundedLat, roundedLng) {
   const popupContent = document.createElement('div');
-  popupContent.className = 'p-1 text-slate-800 text-xs';
+  popupContent.className = 'p-1 text-[#f3f4f6] text-xs';
   popupContent.innerHTML = `
-    <div class="font-bold mb-1 text-slate-900 flex items-center gap-1">
-      <svg class="w-3.5 h-3.5 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+    <div class="font-semibold mb-1 text-[#f3f4f6] flex items-center gap-1.5">
+      <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
       <span>Toạ độ: ${roundedLat}, ${roundedLng}</span>
     </div>
-    <div class="text-[11px] text-slate-500 mb-2">Chọn ghim vị trí này cho chuyến đi của bạn:</div>
+    <div class="text-[11px] text-[#9ca3af] mb-2">Chọn ghim vị trí này cho chuyến đi của bạn:</div>
     <div class="flex flex-col gap-1.5">
-      <button id="btn-popup-set-pickup" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
+      <button id="btn-popup-set-pickup" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition">
         <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
         <span>Đặt làm Điểm Đón</span>
       </button>
-      <button id="btn-popup-set-dropoff" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 px-2.5 rounded shadow-sm flex items-center justify-center gap-1.5 transition">
-        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+      <button id="btn-popup-set-dropoff" class="w-full bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] border border-white/[0.08] text-[11px] font-semibold py-1.5 px-2.5 rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition">
+        <svg class="w-3 h-3 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
         <span>Đặt làm Điểm Đến</span>
       </button>
     </div>
@@ -512,7 +514,7 @@ function setMapInteractionMode(mode) {
     document.body.style.cursor = 'crosshair';
     if (banner) {
       banner.classList.remove('hidden');
-      if (bannerText) bannerText.textContent = '🎯 Chế độ Ghim Điểm: Nhấp vào bản đồ để chọn Điểm Đón hoặc Điểm Đến';
+      if (bannerText) bannerText.textContent = 'Chế độ Ghim Điểm: Nhấp vào bản đồ để chọn Điểm Đón hoặc Điểm Đến';
     }
     if (cancelBtn) cancelBtn.classList.remove('hidden');
     showToast('Chế độ Ghim Điểm: Nhấp vị trí bất kỳ trên bản đồ để chọn điểm đón/đến', 'info');
@@ -523,7 +525,7 @@ function setMapInteractionMode(mode) {
     document.body.style.cursor = 'crosshair';
     if (banner) {
       banner.classList.remove('hidden');
-      if (bannerText) bannerText.textContent = '📍 Nhấp lên bản đồ để chọn Điểm Đón';
+      if (bannerText) bannerText.textContent = 'Nhấp lên bản đồ để chọn Điểm Đón';
     }
     if (cancelBtn) cancelBtn.classList.remove('hidden');
     showToast('Vui lòng nhấp vào bản đồ để chọn điểm đón...', 'info');
@@ -534,7 +536,7 @@ function setMapInteractionMode(mode) {
     document.body.style.cursor = 'crosshair';
     if (banner) {
       banner.classList.remove('hidden');
-      if (bannerText) bannerText.textContent = '🏁 Nhấp lên bản đồ để chọn Điểm Đến';
+      if (bannerText) bannerText.textContent = 'Nhấp lên bản đồ để chọn Điểm Đến';
     }
     if (cancelBtn) cancelBtn.classList.remove('hidden');
     showToast('Vui lòng nhấp vào bản đồ để chọn điểm đến...', 'info');
@@ -602,18 +604,31 @@ function renderPassengerMapMarkers() {
     passengerDropoffMarker.setPopupContent('<b>Điểm đến (Có thể kéo)</b><br>' + state.dropoffCoords.address);
   }
 
-  // Route Polyline
+  // Signature Visual: Transit Route Line (Dual Layer Casing + Signal Amber Core)
   const latlngs = [
     [state.pickupCoords.lat, state.pickupCoords.lon],
     [state.dropoffCoords.lat, state.dropoffCoords.lon],
   ];
 
+  if (!passengerRouteCasing) {
+    passengerRouteCasing = L.polyline(latlngs, {
+      color: '#0a0b0d',
+      weight: 7,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(passengerMap);
+  } else {
+    passengerRouteCasing.setLatLngs(latlngs);
+  }
+
   if (!passengerRouteLine) {
     passengerRouteLine = L.polyline(latlngs, {
-      color: '#3b82f6',
+      color: '#f59e0b',
       weight: 4,
-      opacity: 0.8,
-      dashArray: '6, 8',
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round',
     }).addTo(passengerMap);
   } else {
     passengerRouteLine.setLatLngs(latlngs);
@@ -763,14 +778,28 @@ function renderDriverTripRoute(trip) {
     driverTripDropoffMarker.setPopupContent('<b>Điểm trả khách</b><br>' + (trip.dropoff_address || ''));
   }
 
-  // Route polyline from pickup to dropoff
+  // Route polyline from pickup to dropoff (Signature Transit Dual Layer)
   const latlngs = [[pLat, pLon], [dLat, dLon]];
+
+  if (!driverRouteCasing) {
+    driverRouteCasing = L.polyline(latlngs, {
+      color: '#0a0b0d',
+      weight: 7,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(driverMap);
+  } else {
+    driverRouteCasing.setLatLngs(latlngs);
+  }
+
   if (!driverRouteLine) {
     driverRouteLine = L.polyline(latlngs, {
-      color: '#38bdf8',
+      color: '#f59e0b',
       weight: 4,
-      opacity: 0.85,
-      dashArray: '6, 8',
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round',
     }).addTo(driverMap);
   } else {
     driverRouteLine.setLatLngs(latlngs);
@@ -789,6 +818,10 @@ function clearDriverTripRoute() {
   if (driverTripDropoffMarker && driverMap) {
     driverMap.removeLayer(driverTripDropoffMarker);
     driverTripDropoffMarker = null;
+  }
+  if (driverRouteCasing && driverMap) {
+    driverMap.removeLayer(driverRouteCasing);
+    driverRouteCasing = null;
   }
   if (driverRouteLine && driverMap) {
     driverMap.removeLayer(driverRouteLine);
@@ -1020,7 +1053,7 @@ async function fetchDriverProfile() {
         statusTextEl.className = 'text-[11px] font-mono font-bold text-slate-400';
         toggleBtn.disabled = false;
         toggleBtn.textContent = 'Đang Tạm Nghỉ (Bấm để Sẵn Sàng)';
-        toggleBtn.className = 'flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]';
+        toggleBtn.className = 'flex-1 bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs font-semibold py-2 rounded-lg border border-white/[0.08] transition active:scale-[0.98]';
       }
     }
   }
@@ -1590,14 +1623,14 @@ function setupMapSearchAndControls() {
   function renderSuggestions(items) {
     if (!suggestionsBox) return;
     if (!items || items.length === 0) {
-      suggestionsBox.innerHTML = '<div class="p-2.5 text-slate-400 text-center">Không tìm thấy địa điểm phù hợp</div>';
+      suggestionsBox.innerHTML = '<div class="p-2.5 text-[#9ca3af] text-center text-xs">Không tìm thấy địa điểm phù hợp</div>';
       suggestionsBox.classList.remove('hidden');
       return;
     }
     suggestionsBox.innerHTML = items.map((item) => `
-      <div class="search-suggestion-item p-2 hover:bg-slate-800 cursor-pointer flex flex-col transition" data-lat="${item.lat}" data-lon="${item.lon}" data-name="${encodeURIComponent(item.name)}">
-        <span class="font-medium text-slate-200 text-xs">${item.name}</span>
-        <span class="text-[10px] text-slate-400">${item.desc || (item.lat + ', ' + item.lon)}</span>
+      <div class="search-suggestion-item p-2.5 hover:bg-[#22242a] cursor-pointer flex flex-col transition text-xs border-b border-white/[0.04] last:border-b-0" data-lat="${item.lat}" data-lon="${item.lon}" data-name="${encodeURIComponent(item.name)}">
+        <span class="font-medium text-[#f3f4f6] text-xs">${item.name}</span>
+        <span class="text-[10px] text-[#9ca3af] font-mono">${item.desc || (item.lat + ', ' + item.lon)}</span>
       </div>
     `).join('');
     suggestionsBox.classList.remove('hidden');
@@ -1619,16 +1652,16 @@ function setupMapSearchAndControls() {
       passengerMap.flyTo([lat, lon], 14, { duration: 1.2 });
       setTimeout(() => {
         const popupContent = document.createElement('div');
-        popupContent.className = 'p-1 text-slate-800 text-xs';
+        popupContent.className = 'p-1 text-[#f3f4f6] text-xs';
         popupContent.innerHTML = `
-          <div class="font-bold mb-1 text-slate-900">${name}</div>
-          <div class="text-[11px] text-slate-500 mb-2">Toạ độ: ${lat}, ${lon}</div>
+          <div class="font-semibold mb-1 text-[#f3f4f6]">${name}</div>
+          <div class="text-[11px] text-[#9ca3af] mb-2 font-mono tabular-nums">Toạ độ: ${lat}, ${lon}</div>
           <div class="flex flex-col gap-1.5">
-            <button id="btn-popup-search-pickup" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-1.5 px-2 rounded transition">
-              📍 Đặt làm Điểm Đón
+            <button id="btn-popup-search-pickup" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold py-1.5 px-2 rounded-lg transition">
+              Đặt làm Điểm Đón
             </button>
-            <button id="btn-popup-search-dropoff" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold py-1.5 px-2 rounded transition">
-              🏁 Đặt làm Điểm Đến
+            <button id="btn-popup-search-dropoff" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-semibold py-1.5 px-2 rounded-lg transition shadow-sm">
+              Đặt làm Điểm Đến
             </button>
           </div>
         `;

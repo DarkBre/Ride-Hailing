@@ -6,22 +6,26 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>DS03 — Nền Tảng Đặt Xe Công Nghệ & Điều Phối Thông Minh</title>
+  <title>DS03 — Nền Tảng Đặt Xe Công Nghệ & Điều Phối Vi Dịch Vụ</title>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="/style.css?v=2.5.2" />
+  <link rel="stylesheet" href="/style.css?v=2.6.0" />
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-blue-600/30 selection:text-white">
+<body class="bg-[#121316] text-[#f3f4f6] min-h-screen flex flex-col font-sans antialiased selection:bg-amber-500/25 selection:text-white">
 
-  <!-- Header: Production App Bar -->
-  <header class="bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-2.5 flex items-center justify-between shrink-0 shadow-sm sticky top-0 z-[1000]">
+  <!-- Header: Production App Bar (Quiet Urban Navigation) -->
+  <header class="bg-[#0f0f10] border-b border-white/[0.08] px-4 md:px-6 py-2.5 flex items-center justify-between shrink-0 sticky top-0 z-[1000]">
     <div class="flex items-center space-x-3">
-      <a href="/" id="nav-brand" class="flex items-center space-x-2.5 text-slate-100 hover:text-white transition">
-        <div class="w-9 h-9 rounded-md bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-mono font-bold text-sm">
-          <svg class="w-5 h-5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <a href="/" id="nav-brand" class="flex items-center space-x-2.5 text-[#f3f4f6] hover:text-white transition">
+        <div class="w-8 h-8 rounded-lg bg-[#22242a] border border-white/[0.08] flex items-center justify-center text-amber-400">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>
             <circle cx="7" cy="17" r="2"/>
             <path d="M9 17h6"/>
@@ -30,26 +34,26 @@
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <span class="text-base font-bold text-slate-100 tracking-tight">DS03 Ride-Hailing</span>
-            <span class="hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Distributed Core</span>
+            <span class="text-sm font-semibold text-[#f3f4f6] tracking-tight">DS03 Ride-Hailing</span>
+            <span class="hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-[#22242a] text-[#9ca3af] border border-white/[0.08]">Hệ thống phân tán</span>
           </div>
-          <p class="hidden sm:block text-[11px] text-slate-400">Điều phối chuyến đi tự động • Định giá thông minh • Vận hành phân tán</p>
+          <p class="hidden sm:block text-[11px] text-[#6b7280]">Điều phối chuyến đi • Định giá động • Quản lý phân tán</p>
         </div>
       </a>
 
       <!-- Primary Navigation Links -->
-      <nav class="hidden md:flex items-center space-x-1 pl-4 border-l border-slate-800 text-xs font-medium">
-        <button id="nav-link-landing" class="px-3 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 transition">Trang Chủ</button>
-        <button id="nav-link-passenger" class="px-3 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 transition">Đặt Xe</button>
-        <button id="nav-link-driver" class="px-3 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-800 transition">Cổng Tài Xế</button>
+      <nav class="hidden md:flex items-center space-x-1 pl-4 border-l border-white/[0.08] text-xs font-medium">
+        <button id="nav-link-landing" class="px-3 py-1.5 rounded-md text-[#9ca3af] hover:text-[#f3f4f6] hover:bg-[#22242a] transition">Trang Chủ</button>
+        <button id="nav-link-passenger" class="px-3 py-1.5 rounded-md text-[#9ca3af] hover:text-[#f3f4f6] hover:bg-[#22242a] transition">Đặt Xe</button>
+        <button id="nav-link-driver" class="px-3 py-1.5 rounded-md text-[#9ca3af] hover:text-[#f3f4f6] hover:bg-[#22242a] transition">Cổng Tài Xế</button>
       </nav>
     </div>
 
     <!-- Right Controls: Notification Bell, Session info, Diagnostics / Live Distribution Toggle -->
-    <div class="flex items-center space-x-3 text-xs">
+    <div class="flex items-center space-x-2 text-xs">
       <!-- Diagnostics / Live Distribution Drawer Button -->
-      <button id="btn-toggle-diagnostics" title="Mở bảng điều phối Live Distribution và nhật ký kỹ thuật" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-2.5 py-1.5 rounded border border-slate-700/60 transition active:scale-[0.98]">
-        <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <button id="btn-toggle-diagnostics" title="Mở bảng điều phối Live Distribution và nhật ký kỹ thuật" class="min-h-[36px] flex items-center space-x-1.5 bg-[#22242a] hover:bg-[#2a2c34] text-[#9ca3af] hover:text-[#f3f4f6] px-2.5 py-1.5 rounded-lg border border-white/[0.08] transition active:scale-[0.98]">
+        <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
         </svg>
         <span class="hidden sm:inline text-[11px] font-mono">Live Distribution</span>
@@ -57,26 +61,26 @@
 
       <!-- Notification Center Bell -->
       <div class="relative">
-        <button id="btn-notif-bell" class="relative p-2 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition active:scale-[0.98]" title="Trung tâm thông báo">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="btn-notif-bell" class="relative min-w-[36px] min-h-[36px] flex items-center justify-center p-2 rounded-lg bg-[#22242a] hover:bg-[#2a2c34] text-[#9ca3af] hover:text-[#f3f4f6] border border-white/[0.08] transition active:scale-[0.98]" title="Trung tâm thông báo">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
           </svg>
           <!-- Unread Badge Counter -->
-          <span id="notif-bell-badge" class="hidden absolute -top-1 -right-1 bg-blue-600 text-white font-mono text-[10px] font-bold px-1.5 py-0.2 rounded-full border border-slate-900 tabular-nums">0</span>
+          <span id="notif-bell-badge" class="hidden absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-mono text-[10px] font-bold px-1.5 py-0.2 rounded-full border border-[#0f0f10] tabular-nums">0</span>
         </button>
 
         <!-- Notification Popover Dropdown (Z-1050 inside Z-1000 Header) -->
-        <div id="notification-popover" class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl z-[1050] overflow-hidden">
-          <div class="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div id="notification-popover" class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-[#18191d] border border-white/[0.08] rounded-xl shadow-2xl z-[1050] overflow-hidden">
+          <div class="px-3.5 py-2.5 border-b border-white/[0.08] flex items-center justify-between bg-[#141519]">
             <div class="flex items-center space-x-1.5">
-              <span class="text-xs font-semibold text-slate-200">Thông Báo Thời Gian Thực</span>
-              <span id="notif-count-text" class="text-[10px] font-mono text-slate-400">(0)</span>
+              <span class="text-xs font-semibold text-[#f3f4f6]">Thông Báo Thời Gian Thực</span>
+              <span id="notif-count-text" class="text-[10px] font-mono text-[#9ca3af]">(0)</span>
             </div>
-            <button id="btn-mark-all-read" class="text-[11px] text-blue-400 hover:text-blue-300 hover:underline">Đánh dấu đã đọc tất cả</button>
+            <button id="btn-mark-all-read" class="text-[11px] text-amber-400 hover:text-amber-300 hover:underline">Đánh dấu đã đọc tất cả</button>
           </div>
-          <div id="notification-list" class="max-h-80 overflow-y-auto divide-y divide-slate-800/60">
-            <div id="notification-empty" class="p-6 text-center text-xs text-slate-500">
+          <div id="notification-list" class="max-h-80 overflow-y-auto divide-y divide-white/[0.06]">
+            <div id="notification-empty" class="p-6 text-center text-xs text-[#6b7280]">
               Không có thông báo mới
             </div>
           </div>
@@ -88,17 +92,17 @@
         <!-- Logged in state -->
         <div id="session-logged-in" class="hidden flex items-center space-x-2">
           <div class="text-right hidden sm:block">
-            <div id="session-user-name" class="text-xs font-medium text-slate-200 truncate max-w-[130px]">Nguyễn Văn A</div>
-            <div id="session-user-role" class="text-[10px] font-mono text-blue-400 uppercase">PASSENGER</div>
+            <div id="session-user-name" class="text-xs font-medium text-[#f3f4f6] truncate max-w-[130px]">Nguyễn Văn A</div>
+            <div id="session-user-role" class="text-[10px] font-mono text-amber-400 uppercase">PASSENGER</div>
           </div>
-          <button id="btn-logout" class="bg-slate-800 hover:bg-red-950/40 text-slate-300 hover:text-red-400 text-xs px-2.5 py-1.5 rounded font-medium border border-slate-700/60 hover:border-red-900/40 transition active:scale-[0.98]">
+          <button id="btn-logout" class="min-h-[36px] bg-[#22242a] hover:bg-red-950/30 text-[#9ca3af] hover:text-red-400 text-xs px-2.5 py-1.5 rounded-lg font-medium border border-white/[0.08] hover:border-red-900/40 transition active:scale-[0.98]">
             Đăng xuất
           </button>
         </div>
 
         <!-- Guest state buttons -->
         <div id="session-guest" class="flex items-center space-x-1.5">
-          <button id="btn-nav-login-passenger" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-2.5 py-1.5 rounded font-medium transition active:scale-[0.98]">
+          <button id="btn-nav-login-passenger" class="min-h-[36px] bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs px-3 py-1.5 rounded-lg font-semibold transition active:scale-[0.98]">
             Đăng Nhập
           </button>
         </div>
@@ -106,126 +110,123 @@
     </div>
   </header>
 
-  <!-- View 1: Public Landing Page -->
+  <!-- View 1: Public Landing Page (Asymmetric Craft Split) -->
   <section id="view-landing" class="flex-1 flex flex-col p-4 md:p-8 max-w-6xl mx-auto w-full">
     <!-- Hero Section -->
     <div class="py-8 md:py-12 text-center space-y-3">
-      <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium">
-        <span>Nền Tảng Đặt Xe Công Nghệ Trực Tuyến</span>
-      </div>
-      <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-slate-100 tracking-tight max-w-2xl mx-auto">
+      <h1 class="text-2xl sm:text-3xl md:text-4xl font-semibold text-[#f3f4f6] tracking-tight max-w-2xl mx-auto">
         Dịch Vụ Di Chuyển Thông Minh & Điều Phối Tức Thì
       </h1>
-      <p class="text-sm md:text-base text-slate-400 max-w-xl mx-auto">
+      <p class="text-sm md:text-base text-[#9ca3af] max-w-xl mx-auto leading-relaxed">
         Kết nối hành khách và đối tác tài xế trong tích tắc. Ước tính cước phí minh bạch, định vị chuẩn xác và thanh toán không tiền mặt an toàn.
       </p>
     </div>
 
-    <!-- Dual Entrance Cards: Passenger vs Driver -->
+    <!-- Dual Entrance Cards: Passenger vs Driver (Unified Graphite Palette) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-4">
       <!-- Passenger Portal Card -->
-      <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-6 transition flex flex-col justify-between shadow-sm">
+      <div class="bg-[#18191d] border border-white/[0.08] hover:border-white/[0.14] rounded-xl p-6 transition flex flex-col justify-between shadow-sm">
         <div class="space-y-4">
-          <div class="w-12 h-12 flex items-center justify-center text-emerald-400">
-            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div class="w-10 h-10 rounded-lg bg-[#22242a] border border-white/[0.08] flex items-center justify-center text-amber-400">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
           </div>
           <div>
-            <h2 class="text-base font-bold text-slate-100 uppercase tracking-wider">Dành Cho Khách Hàng</h2>
-            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+            <h2 class="text-base font-semibold text-[#f3f4f6]">Dành cho khách hàng</h2>
+            <p class="text-xs text-[#9ca3af] mt-1.5 leading-relaxed">
               Đặt xe nhanh chóng mọi lúc mọi nơi, biết trước giá cước minh bạch, theo dõi trực tiếp hành trình xe và quản lý số dư ví tiện lợi.
             </p>
           </div>
-          <ul class="text-xs text-slate-300 space-y-1.5 pt-1">
+          <ul class="text-xs text-[#9ca3af] space-y-2 pt-1">
             <li class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Chọn điểm đón và điểm đến nhanh chóng trên bản đồ</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+              <span class="text-[#f3f4f6]">Chọn điểm đón và điểm đến nhanh chóng trên bản đồ</span>
             </li>
             <li class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Ước tính cước phí minh bạch, tự động tối ưu theo lộ trình</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+              <span class="text-[#f3f4f6]">Ước tính cước phí minh bạch, tự động tối ưu theo lộ trình</span>
             </li>
             <li class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-emerald-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Bảo vệ số dư ví điện tử, tự động hoàn tiền khi hủy chuyến</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0"></span>
+              <span class="text-[#f3f4f6]">Bảo vệ số dư ví điện tử, tự động hoàn tiền khi hủy chuyến</span>
             </li>
           </ul>
         </div>
-        <div class="mt-6 pt-4 border-t border-slate-800">
-          <button id="btn-landing-passenger" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <div class="mt-6 pt-4 border-t border-white/[0.08]">
+          <button id="btn-landing-passenger" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm">
             <span>Đặt Xe Ngay</span>
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </button>
         </div>
       </div>
 
       <!-- Driver Portal Card -->
-      <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-6 transition flex flex-col justify-between shadow-sm">
+      <div class="bg-[#18191d] border border-white/[0.08] hover:border-white/[0.14] rounded-xl p-6 transition flex flex-col justify-between shadow-sm">
         <div class="space-y-4">
-          <div class="w-12 h-12 flex items-center justify-center text-blue-400">
-            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <div class="w-10 h-10 rounded-lg bg-[#22242a] border border-white/[0.08] flex items-center justify-center text-[#9ca3af]">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
               <circle cx="12" cy="12" r="10"/>
               <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
               <path d="M2 12h20"/>
             </svg>
           </div>
           <div>
-            <h2 class="text-base font-bold text-slate-100 uppercase tracking-wider">Dành Cho Đối Tác Tài Xế</h2>
-            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
+            <h2 class="text-base font-semibold text-[#f3f4f6]">Dành cho đối tác tài xế</h2>
+            <p class="text-xs text-[#9ca3af] mt-1.5 leading-relaxed">
               Chủ động bật/tắt nhận chuyến, định vị đón khách chuẩn xác, gia tăng thu nhập và quản lý hành trình di chuyển thông minh.
             </p>
           </div>
-          <ul class="text-xs text-slate-300 space-y-1.5 pt-1">
+          <ul class="text-xs text-[#9ca3af] space-y-2 pt-1">
             <li class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Chủ động bật Sẵn Sàng (AVAILABLE) nhận chuyến hoặc Tạm Nghỉ (OFFLINE)</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+              <span class="text-[#f3f4f6]">Chủ động bật Sẵn Sàng (AVAILABLE) nhận chuyến hoặc Tạm Nghỉ (OFFLINE)</span>
             </li>
             <li class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Tự động phân bổ cuốc xe gần nhất với lộ trình tối ưu</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+              <span class="text-[#f3f4f6]">Tự động phân bổ cuốc xe gần nhất với lộ trình tối ưu</span>
             </li>
             <li class="flex items-center gap-2">
-              <svg class="w-3.5 h-3.5 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Quy trình đón trả khách chuyên nghiệp: Nhận Cuốc → Bắt Đầu → Hoàn Thành</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0"></span>
+              <span class="text-[#f3f4f6]">Quy trình đón trả khách chuyên nghiệp: Nhận Cuốc → Bắt Đầu → Hoàn Thành</span>
             </li>
           </ul>
         </div>
-        <div class="mt-6 pt-4 border-t border-slate-800">
-          <button id="btn-landing-driver" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <div class="mt-6 pt-4 border-t border-white/[0.08]">
+          <button id="btn-landing-driver" class="w-full bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs font-semibold py-2.5 rounded-lg border border-white/[0.08] transition active:scale-[0.99] flex items-center justify-center gap-2">
             <span>Bắt Đầu Nhận Chuyến</span>
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </button>
         </div>
       </div>
     </div>
 
     <!-- Quick Demo Accounts Helper Toolbar for Graders / Reviewers -->
-    <div class="mt-4 pt-4 border-t border-slate-800">
+    <div class="mt-4 pt-4 border-t border-white/[0.08]">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5">
         <div class="flex items-center space-x-2">
-          <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <span class="text-xs font-medium text-slate-300">Tài khoản trải nghiệm nhanh (Bấm để điền thông tin tự động):</span>
+          <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span class="text-xs font-medium text-[#f3f4f6]">Tài khoản trải nghiệm nhanh (Bấm để điền thông tin tự động):</span>
         </div>
-        <span class="text-[11px] font-mono text-slate-500">Mật khẩu chung: Password123!</span>
+        <span class="text-[11px] font-mono text-[#6b7280]">Mật khẩu chung: Password123!</span>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-        <button id="btn-quick-passenger1" class="text-left p-2.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs transition">
-          <div class="font-medium text-slate-200">Khách Hàng 1 (Ví chuẩn)</div>
-          <div class="text-[10px] text-slate-400 font-mono truncate">passenger1@demo.ds03</div>
+        <button id="btn-quick-passenger1" class="text-left p-2.5 rounded-lg bg-[#18191d] hover:bg-[#22242a] border border-white/[0.08] text-xs transition">
+          <div class="font-medium text-[#f3f4f6]">Khách Hàng 1 (Ví chuẩn)</div>
+          <div class="text-[10px] text-[#9ca3af] font-mono truncate">passenger1@demo.ds03</div>
         </button>
-        <button id="btn-quick-passenger2" class="text-left p-2.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs transition">
-          <div class="font-medium text-slate-200">Khách Hàng 2 (Cạnh tranh)</div>
-          <div class="text-[10px] text-slate-400 font-mono truncate">passenger2@demo.ds03</div>
+        <button id="btn-quick-passenger2" class="text-left p-2.5 rounded-lg bg-[#18191d] hover:bg-[#22242a] border border-white/[0.08] text-xs transition">
+          <div class="font-medium text-[#f3f4f6]">Khách Hàng 2 (Cạnh tranh)</div>
+          <div class="text-[10px] text-[#9ca3af] font-mono truncate">passenger2@demo.ds03</div>
         </button>
-        <button id="btn-quick-passenger0" class="text-left p-2.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs transition">
-          <div class="font-medium text-slate-200">Khách Hàng 3 (Số dư 0đ)</div>
-          <div class="text-[10px] text-slate-400 font-mono truncate">passenger0@demo.ds03</div>
+        <button id="btn-quick-passenger0" class="text-left p-2.5 rounded-lg bg-[#18191d] hover:bg-[#22242a] border border-white/[0.08] text-xs transition">
+          <div class="font-medium text-[#f3f4f6]">Khách Hàng 3 (Số dư 0đ)</div>
+          <div class="text-[10px] text-[#9ca3af] font-mono truncate">passenger0@demo.ds03</div>
         </button>
-        <button id="btn-quick-driver1" class="text-left p-2.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs transition">
-          <div class="font-medium text-slate-200">Tài xế Nguyễn Văn Tài</div>
-          <div class="text-[10px] text-slate-400 font-mono truncate">driver1@demo.ds03</div>
+        <button id="btn-quick-driver1" class="text-left p-2.5 rounded-lg bg-[#18191d] hover:bg-[#22242a] border border-white/[0.08] text-xs transition">
+          <div class="font-medium text-[#f3f4f6]">Tài xế Nguyễn Văn Tài</div>
+          <div class="text-[10px] text-[#9ca3af] font-mono truncate">driver1@demo.ds03</div>
         </button>
       </div>
     </div>
@@ -233,11 +234,11 @@
 
   <!-- View 2: Passenger Authentication (Login / Register) -->
   <section id="view-auth-passenger" class="hidden flex-1 flex items-center justify-center p-4">
-    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-xl">
+    <div class="w-full max-w-md bg-[#18191d] border border-white/[0.08] rounded-xl p-6 sm:p-8 shadow-2xl">
       <!-- Tabs: Đăng nhập vs Đăng ký -->
-      <div class="flex border-b border-slate-800 mb-6">
-        <button id="tab-passenger-login" class="flex-1 pb-3 text-xs font-semibold text-blue-400 border-b-2 border-blue-500 transition">Đăng Nhập Khách Hàng</button>
-        <button id="tab-passenger-register" class="flex-1 pb-3 text-xs font-semibold text-slate-400 hover:text-slate-200 transition">Đăng Ký Tài Khoản</button>
+      <div class="flex border-b border-white/[0.08] mb-6">
+        <button id="tab-passenger-login" class="flex-1 pb-3 text-xs font-semibold text-amber-400 border-b-2 border-amber-500 transition">Đăng Nhập Khách Hàng</button>
+        <button id="tab-passenger-register" class="flex-1 pb-3 text-xs font-semibold text-[#9ca3af] hover:text-[#f3f4f6] transition">Đăng Ký Tài Khoản</button>
       </div>
 
       <!-- Error message container -->
@@ -247,19 +248,19 @@
       <!-- Login Form -->
       <form id="form-passenger-login" class="space-y-4">
         <div>
-          <label for="passenger-login-email" class="block text-xs font-medium text-slate-300 mb-1">Email</label>
-          <input id="passenger-login-email" type="email" required placeholder="passenger1@demo.ds03" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="passenger-login-email" class="block text-xs font-medium text-[#9ca3af] mb-1">Email</label>
+          <input id="passenger-login-email" type="email" required placeholder="passenger1@demo.ds03" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="passenger-login-password" class="block text-xs font-medium text-slate-300 mb-1">Mật khẩu</label>
+          <label for="passenger-login-password" class="block text-xs font-medium text-[#9ca3af] mb-1">Mật khẩu</label>
           <div class="relative">
-            <input id="passenger-login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 pr-10 focus:border-blue-500 focus:outline-none" />
-            <button type="button" id="btn-toggle-passenger-pw" class="absolute right-2 top-2 text-slate-400 hover:text-slate-200 text-xs p-0.5">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <input id="passenger-login-password" type="password" required placeholder="••••••••" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 pr-10 focus:border-amber-500 focus:outline-none" />
+            <button type="button" id="btn-toggle-passenger-pw" class="absolute right-2 top-2 text-[#9ca3af] hover:text-[#f3f4f6] text-xs p-1">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
         </div>
-        <button type="submit" id="btn-submit-passenger-login" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <button type="submit" id="btn-submit-passenger-login" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm">
           <span>Đăng Nhập</span>
         </button>
       </form>
@@ -267,31 +268,31 @@
       <!-- Register Form -->
       <form id="form-passenger-register" class="hidden space-y-3.5">
         <div>
-          <label for="passenger-register-name" class="block text-xs font-medium text-slate-300 mb-1">Họ và tên</label>
-          <input id="passenger-register-name" type="text" required placeholder="Nguyễn Văn A" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="passenger-register-name" class="block text-xs font-medium text-[#9ca3af] mb-1">Họ và tên</label>
+          <input id="passenger-register-name" type="text" required placeholder="Nguyễn Văn A" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="passenger-register-phone" class="block text-xs font-medium text-slate-300 mb-1">Số điện thoại</label>
-          <input id="passenger-register-phone" type="tel" required placeholder="0901234567" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="passenger-register-phone" class="block text-xs font-medium text-[#9ca3af] mb-1">Số điện thoại</label>
+          <input id="passenger-register-phone" type="tel" required placeholder="0901234567" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="passenger-register-email" class="block text-xs font-medium text-slate-300 mb-1">Email</label>
-          <input id="passenger-register-email" type="email" required placeholder="khach@example.com" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="passenger-register-email" class="block text-xs font-medium text-[#9ca3af] mb-1">Email</label>
+          <input id="passenger-register-email" type="email" required placeholder="khach@example.com" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="passenger-register-password" class="block text-xs font-medium text-slate-300 mb-1">Mật khẩu (tối thiểu 6 ký tự)</label>
-          <input id="passenger-register-password" type="password" required minlength="6" placeholder="••••••••" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="passenger-register-password" class="block text-xs font-medium text-[#9ca3af] mb-1">Mật khẩu (tối thiểu 6 ký tự)</label>
+          <input id="passenger-register-password" type="password" required minlength="6" placeholder="••••••••" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
-        <button type="submit" id="btn-submit-passenger-register" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <button type="submit" id="btn-submit-passenger-register" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm">
           <span>Đăng Ký Tài Khoản Khách Hàng</span>
         </button>
       </form>
 
       <!-- Switch to Driver portal -->
-      <div class="mt-6 pt-4 border-t border-slate-800 text-center">
-        <p class="text-xs text-slate-400">
+      <div class="mt-6 pt-4 border-t border-white/[0.08] text-center">
+        <p class="text-xs text-[#9ca3af]">
           Bạn là đối tác tài xế?
-          <button id="btn-switch-to-driver-auth" class="text-blue-400 hover:text-blue-300 font-medium hover:underline ml-1">Đăng ký / Đăng nhập cổng Tài xế</button>
+          <button id="btn-switch-to-driver-auth" class="text-amber-400 hover:text-amber-300 font-medium hover:underline ml-1">Đăng ký / Đăng nhập cổng Tài xế</button>
         </p>
       </div>
     </div>
@@ -299,11 +300,11 @@
 
   <!-- View 3: Driver Authentication (Login / Register) -->
   <section id="view-auth-driver" class="hidden flex-1 flex items-center justify-center p-4">
-    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-xl">
+    <div class="w-full max-w-md bg-[#18191d] border border-white/[0.08] rounded-xl p-6 sm:p-8 shadow-2xl">
       <!-- Tabs: Đăng nhập vs Đăng ký -->
-      <div class="flex border-b border-slate-800 mb-6">
-        <button id="tab-driver-login" class="flex-1 pb-3 text-xs font-semibold text-blue-400 border-b-2 border-blue-500 transition">Đăng Nhập Tài Xế</button>
-        <button id="tab-driver-register" class="flex-1 pb-3 text-xs font-semibold text-slate-400 hover:text-slate-200 transition">Đăng Ký Đối Tác Mới</button>
+      <div class="flex border-b border-white/[0.08] mb-6">
+        <button id="tab-driver-login" class="flex-1 pb-3 text-xs font-semibold text-amber-400 border-b-2 border-amber-500 transition">Đăng Nhập Tài Xế</button>
+        <button id="tab-driver-register" class="flex-1 pb-3 text-xs font-semibold text-[#9ca3af] hover:text-[#f3f4f6] transition">Đăng Ký Đối Tác Mới</button>
       </div>
 
       <!-- Error message container -->
@@ -313,19 +314,19 @@
       <!-- Login Form -->
       <form id="form-driver-login" class="space-y-4">
         <div>
-          <label for="driver-login-email" class="block text-xs font-medium text-slate-300 mb-1">Email Tài Xế</label>
-          <input id="driver-login-email" type="email" required placeholder="driver1@demo.ds03" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="driver-login-email" class="block text-xs font-medium text-[#9ca3af] mb-1">Email Tài Xế</label>
+          <input id="driver-login-email" type="email" required placeholder="driver1@demo.ds03" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="driver-login-password" class="block text-xs font-medium text-slate-300 mb-1">Mật khẩu</label>
+          <label for="driver-login-password" class="block text-xs font-medium text-[#9ca3af] mb-1">Mật khẩu</label>
           <div class="relative">
-            <input id="driver-login-password" type="password" required placeholder="••••••••" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 pr-10 focus:border-blue-500 focus:outline-none" />
-            <button type="button" id="btn-toggle-driver-pw" class="absolute right-2 top-2 text-slate-400 hover:text-slate-200 text-xs p-0.5">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <input id="driver-login-password" type="password" required placeholder="••••••••" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 pr-10 focus:border-amber-500 focus:outline-none" />
+            <button type="button" id="btn-toggle-driver-pw" class="absolute right-2 top-2 text-[#9ca3af] hover:text-[#f3f4f6] text-xs p-1">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
         </div>
-        <button type="submit" id="btn-submit-driver-login" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <button type="submit" id="btn-submit-driver-login" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm">
           <span>Đăng Nhập Cổng Tài Xế</span>
         </button>
       </form>
@@ -333,29 +334,29 @@
       <!-- Register Form -->
       <form id="form-driver-register" class="hidden space-y-3.5">
         <div>
-          <label for="driver-register-name" class="block text-xs font-medium text-slate-300 mb-1">Họ và tên tài xế</label>
-          <input id="driver-register-name" type="text" required placeholder="Nguyễn Văn Tài" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="driver-register-name" class="block text-xs font-medium text-[#9ca3af] mb-1">Họ và tên tài xế</label>
+          <input id="driver-register-name" type="text" required placeholder="Nguyễn Văn Tài" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="driver-register-phone" class="block text-xs font-medium text-slate-300 mb-1">Số điện thoại</label>
-          <input id="driver-register-phone" type="tel" required placeholder="0909999999" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="driver-register-phone" class="block text-xs font-medium text-[#9ca3af] mb-1">Số điện thoại</label>
+          <input id="driver-register-phone" type="tel" required placeholder="0909999999" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="driver-register-email" class="block text-xs font-medium text-slate-300 mb-1">Email</label>
-          <input id="driver-register-email" type="email" required placeholder="taixe@example.com" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="driver-register-email" class="block text-xs font-medium text-[#9ca3af] mb-1">Email</label>
+          <input id="driver-register-email" type="email" required placeholder="taixe@example.com" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
         <div>
-          <label for="driver-register-password" class="block text-xs font-medium text-slate-300 mb-1">Mật khẩu (tối thiểu 6 ký tự)</label>
-          <input id="driver-register-password" type="password" required minlength="6" placeholder="••••••••" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none" />
+          <label for="driver-register-password" class="block text-xs font-medium text-[#9ca3af] mb-1">Mật khẩu (tối thiểu 6 ký tự)</label>
+          <input id="driver-register-password" type="password" required minlength="6" placeholder="••••••••" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none" />
         </div>
-        <button type="submit" id="btn-submit-driver-register" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <button type="submit" id="btn-submit-driver-register" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm">
           <span>Đăng Ký Trở Thành Đối Tác Tài Xế</span>
         </button>
       </form>
 
       <!-- Switch to Passenger portal -->
-      <div class="mt-6 pt-4 border-t border-slate-800 text-center">
-        <p class="text-xs text-slate-400">
+      <div class="mt-6 pt-4 border-t border-white/[0.08] text-center">
+        <p class="text-xs text-[#9ca3af]">
           Bạn là khách hàng muốn đặt xe?
           <button id="btn-switch-to-passenger-auth" class="text-emerald-400 hover:text-emerald-300 font-medium hover:underline ml-1">Đăng nhập cổng Khách hàng</button>
         </p>
@@ -368,207 +369,208 @@
     <!-- Left Column: Booking Form, Fare Preview, Active Trip & Wallet (4 cols) -->
     <div class="lg:col-span-4 flex flex-col space-y-3 overflow-y-auto pr-1">
       <!-- Wallet Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5 shadow-sm">
+      <div class="bg-[#18191d] border border-white/[0.08] rounded-xl p-3.5 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
-            <div class="text-[11px] text-slate-400 font-medium">Số Dư Ví Điện Tử</div>
+            <div class="text-[11px] text-[#9ca3af] font-medium">Số Dư Ví Điện Tử</div>
             <div class="text-lg font-bold text-emerald-400 font-mono tabular-nums">
               <span id="passenger-wallet-balance">0</span> đ
             </div>
-            <div class="text-[10px] text-slate-400">
+            <div class="text-[10px] text-[#6b7280]">
               Đang tạm giữ: <span id="passenger-wallet-held" class="font-mono text-amber-400 tabular-nums">0</span> đ
             </div>
           </div>
-          <button id="btn-open-topup-modal" class="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded font-medium transition active:scale-[0.98]">
+          <button id="btn-open-topup-modal" class="min-h-[36px] bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs px-3 py-1.5 rounded-lg font-medium border border-white/[0.08] transition active:scale-[0.98]">
             + Nạp Tiền Ví
           </button>
         </div>
       </div>
 
       <!-- Booking Section (shown when no active trip) -->
-      <div id="passenger-booking-section" class="bg-slate-900 border border-slate-800 rounded-lg p-4 shadow-sm space-y-3.5">
-        <div class="pb-2.5 border-b border-slate-800 flex items-center justify-between">
-          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <div id="passenger-booking-section" class="bg-[#18191d] border border-white/[0.08] rounded-xl p-4 shadow-sm space-y-3.5">
+        <div class="pb-2.5 border-b border-white/[0.08] flex items-center justify-between">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-[#9ca3af] flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
               <circle cx="12" cy="12" r="10"/>
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
             </svg>
             Đặt Chuyến Xe
           </h2>
-          <span class="text-[11px] text-blue-400 font-mono">Việt Nam (Toàn Quốc)</span>
+          <span class="text-[11px] text-[#9ca3af] font-mono">Việt Nam (Toàn Quốc)</span>
         </div>
 
         <!-- Pickup input -->
         <div>
-          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span class="flex items-center gap-1">
+          <div class="flex items-center justify-between text-xs text-[#9ca3af] mb-1">
+            <span class="flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-              Điểm đón khách:
+              <span>Điểm đón khách:</span>
             </span>
             <button type="button" id="btn-pick-pickup" class="text-emerald-400 hover:text-emerald-300 text-[11px] hover:underline flex items-center gap-1">
-              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
               <span>Chọn trên bản đồ</span>
             </button>
           </div>
-          <input id="input-pickup-address" type="text" value="Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 focus:border-blue-500 focus:outline-none" />
-          <div class="flex gap-3 text-[10px] font-mono text-slate-500 mt-1">
-            <span>Lat: <span id="text-pickup-lat" class="text-slate-300 tabular-nums">21.0285</span></span>
-            <span>Lon: <span id="text-pickup-lon" class="text-slate-300 tabular-nums">105.8544</span></span>
+          <input id="input-pickup-address" type="text" value="Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus:outline-none" />
+          <div class="flex gap-3 text-[10px] font-mono text-[#6b7280] mt-1">
+            <span>Lat: <span id="text-pickup-lat" class="text-[#9ca3af] tabular-nums">21.0285</span></span>
+            <span>Lon: <span id="text-pickup-lon" class="text-[#9ca3af] tabular-nums">105.8544</span></span>
           </div>
         </div>
 
         <!-- Dropoff input -->
         <div>
-          <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span class="flex items-center gap-1">
+          <div class="flex items-center justify-between text-xs text-[#9ca3af] mb-1">
+            <span class="flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-              Điểm đến:
+              <span>Điểm đến:</span>
             </span>
             <button type="button" id="btn-pick-dropoff" class="text-amber-400 hover:text-amber-300 text-[11px] hover:underline flex items-center gap-1">
-              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
               <span>Chọn trên bản đồ</span>
             </button>
           </div>
-          <input id="input-dropoff-address" type="text" value="Landmark 72, Nam Từ Liêm, Hà Nội" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 focus:border-blue-500 focus:outline-none" />
-          <div class="flex gap-3 text-[10px] font-mono text-slate-500 mt-1">
-            <span>Lat: <span id="text-dropoff-lat" class="text-slate-300 tabular-nums">21.0173</span></span>
-            <span>Lon: <span id="text-dropoff-lon" class="text-slate-300 tabular-nums">105.7839</span></span>
+          <input id="input-dropoff-address" type="text" value="Landmark 72, Nam Từ Liêm, Hà Nội" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus:outline-none" />
+          <div class="flex gap-3 text-[10px] font-mono text-[#6b7280] mt-1">
+            <span>Lat: <span id="text-dropoff-lat" class="text-[#9ca3af] tabular-nums">21.0173</span></span>
+            <span>Lon: <span id="text-dropoff-lon" class="text-[#9ca3af] tabular-nums">105.7839</span></span>
           </div>
         </div>
 
         <!-- Dynamic Fare Section -->
-        <div class="pt-3 border-t border-slate-800 space-y-2">
+        <div class="pt-3 border-t border-white/[0.08] space-y-2">
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-400">Khoảng cách dự kiến:</span>
-            <span id="fare-distance-km" class="font-mono text-slate-200 tabular-nums">7.4 km</span>
+            <span class="text-[#9ca3af]">Khoảng cách dự kiến:</span>
+            <span id="fare-distance-km" class="font-mono text-[#f3f4f6] tabular-nums">7.4 km</span>
           </div>
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-400">Hệ số cao điểm (Surge):</span>
-            <span id="fare-surge-multiplier" class="font-mono text-blue-400 tabular-nums">1.0x</span>
+            <span class="text-[#9ca3af]">Hệ số cao điểm (Surge):</span>
+            <span id="fare-surge-multiplier" class="font-mono text-amber-400 tabular-nums">1.0x</span>
           </div>
-          <div class="flex items-center justify-between text-xs pt-1.5 border-t border-slate-800/60">
-            <span class="font-medium text-slate-300">Giá cước ước tính:</span>
+          <div class="flex items-center justify-between text-xs pt-1.5 border-t border-white/[0.06]">
+            <span class="font-medium text-[#f3f4f6]">Giá cước ước tính:</span>
             <div class="text-right">
-              <span id="fare-estimated-amount" class="text-sm font-bold text-emerald-400 font-mono tabular-nums">89,000</span>
-              <span class="text-xs text-emerald-400"> đ</span>
+              <span id="fare-estimated-amount" class="text-base font-bold text-amber-400 font-mono tabular-nums">89,000</span>
+              <span class="text-xs text-amber-400"> đ</span>
             </div>
           </div>
-          <div class="text-[10px] text-slate-500 font-mono pt-1">
-            Phương thức: <span id="fare-pricing-source" class="text-slate-400">Định giá linh hoạt theo thời gian thực</span>
+          <div class="text-[10px] text-[#6b7280] font-mono pt-1">
+            Phương thức: <span id="fare-pricing-source" class="text-[#9ca3af]">Định giá linh hoạt theo thời gian thực</span>
           </div>
         </div>
 
         <!-- Booking Submit Button -->
-        <button id="btn-create-trip" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2">
+        <button id="btn-create-trip" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-sm">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           <span>Xác Nhận Đặt Xe</span>
         </button>
       </div>
 
       <!-- Active Trip Section (shown when trip is active) -->
-      <div id="passenger-active-trip-section" class="hidden bg-slate-900 border border-slate-800 rounded-lg p-4 shadow-sm space-y-3.5">
-        <div class="pb-2.5 border-b border-slate-800 flex items-center justify-between">
-          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+      <div id="passenger-active-trip-section" class="hidden bg-[#18191d] border border-white/[0.08] rounded-xl p-4 shadow-sm space-y-3.5">
+        <div class="pb-2.5 border-b border-white/[0.08] flex items-center justify-between">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-[#9ca3af] flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
             Hành Trình Hiện Tại
           </h2>
-          <span id="active-trip-status-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold">
+          <span id="active-trip-status-badge" class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">
             REQUESTED
           </span>
         </div>
 
         <!-- Saga Lifecycle Stepper -->
         <div class="space-y-1.5 py-1">
-          <div class="text-[11px] font-medium text-slate-400">Trạng thái hành trình:</div>
+          <div class="text-[11px] font-medium text-[#9ca3af]">Trạng thái hành trình:</div>
           <div class="grid grid-cols-4 gap-1 text-[10px] font-mono text-center">
-            <div id="step-requested" class="p-1 text-slate-400">1. Đặt xe</div>
-            <div id="step-matching" class="p-1 text-slate-400">2. Ghép xe</div>
-            <div id="step-payment" class="p-1 text-slate-400">3. Giữ ví</div>
-            <div id="step-trip" class="p-1 text-slate-400">4. Đang đón</div>
+            <div id="step-requested" class="p-1 text-[#6b7280] rounded-md">1. Đặt xe</div>
+            <div id="step-matching" class="p-1 text-[#6b7280] rounded-md">2. Ghép xe</div>
+            <div id="step-payment" class="p-1 text-[#6b7280] rounded-md">3. Giữ ví</div>
+            <div id="step-trip" class="p-1 text-[#6b7280] rounded-md">4. Đang đón</div>
           </div>
         </div>
 
         <!-- Trip Info Details -->
-        <div class="pt-3 border-t border-slate-800 space-y-1.5 text-xs">
+        <div class="pt-3 border-t border-white/[0.08] space-y-1.5 text-xs">
           <div class="flex justify-between">
-            <span class="text-slate-400">Mã chuyến:</span>
-            <span id="active-trip-id" class="font-mono text-slate-300 text-[11px] truncate max-w-[170px]">---</span>
+            <span class="text-[#9ca3af]">Mã chuyến:</span>
+            <span id="active-trip-id" class="font-mono text-[#f3f4f6] text-[11px] truncate max-w-[170px]">---</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-slate-400">Tài xế đón:</span>
-            <span id="active-trip-driver" class="font-medium text-blue-400">Đang tìm tài xế...</span>
+            <span class="text-[#9ca3af]">Tài xế đón:</span>
+            <span id="active-trip-driver" class="font-medium text-[#f3f4f6]">Đang tìm tài xế...</span>
           </div>
           <div class="flex justify-between">
-            <span class="text-slate-400">Cước phí:</span>
-            <span id="active-trip-fare" class="font-bold text-emerald-400 font-mono tabular-nums">--- đ</span>
+            <span class="text-[#9ca3af]">Cước phí:</span>
+            <span id="active-trip-fare" class="font-bold text-amber-400 font-mono tabular-nums">--- đ</span>
           </div>
         </div>
 
         <!-- Cancel Trip Button -->
-        <button id="btn-open-cancel-modal" class="w-full bg-slate-800 hover:bg-red-950/40 text-slate-300 hover:text-red-400 text-xs font-medium py-2 rounded-lg border border-slate-700/60 hover:border-red-900/60 transition active:scale-[0.99]">
+        <button id="btn-open-cancel-modal" class="w-full bg-[#22242a] hover:bg-red-950/30 text-[#9ca3af] hover:text-red-400 text-xs font-medium py-2 rounded-lg border border-white/[0.08] hover:border-red-900/40 transition active:scale-[0.99]">
           Hủy Chuyến Đi
         </button>
       </div>
     </div>
 
     <!-- Right Column: Interactive Leaflet Map (Google Maps Style) (8 cols) -->
-    <div id="passenger-map-wrapper" class="lg:col-span-8 flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden relative min-h-[500px]">
+    <div id="passenger-map-wrapper" class="lg:col-span-8 flex flex-col bg-[#18191d] border border-white/[0.08] rounded-xl overflow-hidden relative min-h-[500px]">
       <div id="passenger-map" class="w-full h-full flex-1 min-h-[500px]"></div>
 
-      <!-- Google Maps Floating Search (Top Left) -->
-      <div class="absolute top-3 left-3 z-[600] pointer-events-auto">
-        <div class="relative flex items-center bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-lg shadow-xl px-2.5 py-1.5 text-xs text-white">
-          <svg class="w-4 h-4 text-blue-400 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="input-map-search" type="text" placeholder="Tìm địa chỉ, toà nhà, địa danh..." class="bg-transparent border-none text-xs text-slate-100 placeholder-slate-400 focus:outline-none w-44 sm:w-60" autocomplete="off" />
-          <button id="btn-map-search" class="text-slate-400 hover:text-white p-1 ml-1" title="Tìm kiếm vị trí">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      <!-- Floating Map Top Bar (Unified Responsive Container: Zero Overlap) -->
+      <div class="absolute top-3 inset-x-3 z-[600] pointer-events-none flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        <!-- Search Box -->
+        <div class="pointer-events-auto relative flex items-center bg-[#18191d]/95 backdrop-blur-md border border-white/[0.12] rounded-lg shadow-xl px-2.5 py-1.5 text-xs text-white min-h-[36px] max-w-sm">
+          <svg class="w-4 h-4 text-amber-400 mr-2 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="input-map-search" type="text" placeholder="Tìm địa chỉ, toà nhà, địa danh..." class="bg-transparent border-none text-xs text-[#f3f4f6] placeholder-[#6b7280] focus:outline-none w-full sm:w-56" autocomplete="off" />
+          <button id="btn-map-search" class="text-[#9ca3af] hover:text-white p-1 ml-1" title="Tìm kiếm vị trí">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
           <!-- Suggestions Dropdown -->
-          <div id="map-search-suggestions" class="hidden absolute top-full left-0 mt-1.5 w-full sm:w-80 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-lg shadow-2xl max-h-64 overflow-y-auto z-[700] text-xs divide-y divide-slate-800/80">
+          <div id="map-search-suggestions" class="hidden absolute top-full left-0 mt-1.5 w-full sm:w-80 bg-[#18191d]/95 backdrop-blur-md border border-white/[0.12] rounded-lg shadow-2xl max-h-64 overflow-y-auto z-[700] text-xs divide-y divide-white/[0.06]">
           </div>
         </div>
-      </div>
 
-      <!-- Google Maps Floating Controls (Top Right) -->
-      <div class="absolute top-3 right-3 z-[500] pointer-events-auto flex items-center justify-end gap-1.5 bg-slate-900/95 backdrop-blur-md p-1 rounded-lg border border-slate-700/80 shadow-xl">
-        <!-- Segmented Mode Switcher: Kéo Bản Đồ vs Ghim Điểm Tự Do -->
-        <div class="flex items-center bg-slate-950/90 p-0.5 rounded-md border border-slate-700/80 text-[11px] mr-0.5">
-          <button id="btn-mode-pan" class="bg-blue-600 text-white font-medium px-2 py-1 rounded transition flex items-center gap-1 shadow-sm" title="Chế độ Kéo bản đồ tự do">
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0m-4 0V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v7M6 14v-2a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6a8 8 0 0 0 8 8h2a8 8 0 0 0 8-8V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v5"/></svg>
-            <span>Kéo Bản Đồ</span>
+        <!-- Controls Toolbar -->
+        <div class="pointer-events-auto flex items-center justify-end gap-1.5 bg-[#18191d]/95 backdrop-blur-md p-1 rounded-lg border border-white/[0.12] shadow-xl min-h-[36px] self-end sm:self-auto">
+          <!-- Segmented Mode Switcher: Kéo Bản Đồ vs Ghim Điểm Tự Do -->
+          <div class="flex items-center bg-[#121316] p-0.5 rounded-md border border-white/[0.08] text-[11px] mr-0.5">
+            <button id="btn-mode-pan" class="bg-blue-600 text-white font-medium px-2 py-1 rounded-md transition flex items-center gap-1 shadow-sm" title="Chế độ Kéo bản đồ tự do">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0m-4 0V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v7M6 14v-2a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6a8 8 0 0 0 8 8h2a8 8 0 0 0 8-8V9a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v5"/></svg>
+              <span>Kéo Bản Đồ</span>
+            </button>
+            <button id="btn-mode-pin" class="text-[#9ca3af] hover:text-white px-2 py-1 rounded-md transition flex items-center gap-1" title="Chế độ Ghim điểm chủ động">
+              <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+              <span>Ghim Điểm</span>
+            </button>
+          </div>
+
+          <button id="btn-map-my-location" class="min-w-[36px] min-h-[36px] flex items-center justify-center p-1.5 hover:bg-[#22242a] text-[#9ca3af] hover:text-emerald-400 rounded-md transition" title="Vị trí hiện tại của tôi (GPS)">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="2" y1="12" x2="4" y2="12"/></svg>
           </button>
-          <button id="btn-mode-pin" class="text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1" title="Chế độ Ghim điểm chủ động">
-            <svg class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
-            <span>Ghim Điểm</span>
+          <button id="btn-map-fullscreen" class="min-w-[36px] min-h-[36px] flex items-center justify-center p-1.5 hover:bg-[#22242a] text-[#9ca3af] hover:text-amber-400 rounded-md transition" title="Xem bản đồ toàn màn hình">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          </button>
+          <div class="h-3 w-px bg-white/[0.08] mx-0.5"></div>
+          <button id="btn-map-fit" class="min-h-[32px] bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-[11px] px-2.5 py-1 rounded-md border border-white/[0.08] transition" title="Căn giữa toàn bộ tuyến đường di chuyển">
+            Căn Tuyến
+          </button>
+          <button id="btn-map-reset-points" class="min-h-[32px] bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-[11px] px-2.5 py-1 rounded-md border border-white/[0.08] transition" title="Đặt lại lộ trình mặc định">
+            Đặt Lại
           </button>
         </div>
-
-        <button id="btn-map-my-location" class="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 rounded transition" title="Vị trí hiện tại của tôi (GPS)">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="2" y1="12" x2="4" y2="12"/></svg>
-        </button>
-        <button id="btn-map-fullscreen" class="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-blue-400 rounded transition" title="Xem bản đồ toàn màn hình">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-        </button>
-        <div class="h-3 w-px bg-slate-700 mx-0.5"></div>
-        <button id="btn-map-fit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded transition" title="Căn giữa toàn bộ tuyến đường di chuyển">
-          Căn Tuyến
-        </button>
-        <button id="btn-map-reset-points" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded transition" title="Đặt lại lộ trình mặc định">
-          Đặt Lại
-        </button>
       </div>
 
       <!-- Pick Mode Instruction Banner (Centered Top) -->
-      <div id="pick-mode-banner" class="hidden absolute top-14 left-1/2 -translate-x-1/2 z-[650] bg-slate-900/95 backdrop-blur-md text-slate-100 text-xs px-3.5 py-2 rounded-xl shadow-2xl border border-emerald-500/50 flex items-center gap-2 max-w-md pointer-events-auto">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-        <span id="pick-mode-text" class="font-medium text-emerald-300">🎯 Nhấp lên bản đồ để chọn Điểm Đón hoặc Điểm Đến</span>
-        <button id="btn-cancel-pick" class="ml-2 bg-red-900/70 hover:bg-red-800 text-red-200 text-[10px] px-2 py-0.5 rounded border border-red-700/60 transition">
+      <div id="pick-mode-banner" class="hidden absolute top-24 sm:top-14 left-1/2 -translate-x-1/2 z-[650] bg-[#18191d]/95 backdrop-blur-md text-[#f3f4f6] text-xs px-3.5 py-2 rounded-xl shadow-2xl border border-white/[0.12] flex items-center gap-2 max-w-md pointer-events-auto">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+        <span id="pick-mode-text" class="font-medium text-emerald-300">Nhấp lên bản đồ để chọn Điểm Đón hoặc Điểm Đến</span>
+        <button id="btn-cancel-pick" class="ml-2 bg-[#22242a] hover:bg-red-950/40 text-red-400 text-[10px] px-2 py-0.5 rounded-md border border-white/[0.08] transition">
           ✕ Hủy (Esc)
         </button>
       </div>
 
       <!-- Map Legend Overlay -->
-      <div class="absolute bottom-3 right-3 z-[400] bg-slate-900/90 backdrop-blur-sm px-2.5 py-1.5 rounded-md border border-slate-800 text-[10px] text-slate-300 flex items-center space-x-3 shadow">
+      <div class="absolute bottom-3 right-3 z-[400] bg-[#18191d]/90 backdrop-blur-sm px-2.5 py-1.5 rounded-md border border-white/[0.08] text-[10px] text-[#9ca3af] flex items-center space-x-3 shadow">
         <div class="flex items-center space-x-1">
           <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
           <span>Điểm đón</span>
@@ -590,15 +592,19 @@
     <!-- Left Column: Driver Status, Current Assignment, Actions (4 cols) -->
     <div class="lg:col-span-4 flex flex-col space-y-3 overflow-y-auto pr-1">
       <!-- Driver Profile & Status Control Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 shadow-sm space-y-3">
-        <div class="flex items-center justify-between pb-2.5 border-b border-slate-800">
+      <div class="bg-[#18191d] border border-white/[0.08] rounded-xl p-4 shadow-sm space-y-3">
+        <div class="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
           <div class="flex items-center space-x-2.5">
-            <div class="w-8 h-8 flex items-center justify-center text-blue-400 font-bold text-xs">
-              TX
+            <div class="w-8 h-8 rounded-lg bg-[#22242a] border border-white/[0.08] flex items-center justify-center text-amber-400 font-medium text-xs">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>
+                <circle cx="7" cy="17" r="2"/>
+                <circle cx="17" cy="17" r="2"/>
+              </svg>
             </div>
             <div>
-              <div id="driver-profile-name" class="text-xs font-bold text-slate-100">Nguyễn Văn Tài</div>
-              <div id="driver-profile-vehicle" class="text-[10px] font-mono text-slate-400">29A-888.88 • Toyota Vios</div>
+              <div id="driver-profile-name" class="text-xs font-semibold text-[#f3f4f6]">Nguyễn Văn Tài</div>
+              <div id="driver-profile-vehicle" class="text-[10px] font-mono text-[#9ca3af]">29A-888.88 • Toyota Vios</div>
             </div>
           </div>
           <!-- Work Status Toggle Switch -->
@@ -608,72 +614,72 @@
         </div>
 
         <div class="flex items-center gap-2 pt-1">
-          <button id="btn-toggle-driver-status" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]">
+          <button id="btn-toggle-driver-status" class="flex-1 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]">
             Đang Sẵn Sàng (Bấm để Tạm Nghỉ)
           </button>
-          <button id="btn-update-driver-gps" title="Cập nhật toạ độ GPS lên hệ thống" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700/60 transition active:scale-[0.98]">
+          <button id="btn-update-driver-gps" title="Cập nhật toạ độ GPS lên hệ thống" class="min-h-[36px] bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs px-3 py-2 rounded-lg border border-white/[0.08] transition active:scale-[0.98]">
             Cập Nhật GPS
           </button>
         </div>
       </div>
 
       <!-- Driver Assignment & Trip Action Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-4 shadow-sm space-y-3.5">
-        <div class="pb-2.5 border-b border-slate-800 flex items-center justify-between">
-          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      <div class="bg-[#18191d] border border-white/[0.08] rounded-xl p-4 shadow-sm space-y-3.5">
+        <div class="pb-2.5 border-b border-white/[0.08] flex items-center justify-between">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-[#9ca3af] flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             Thông Tin Cuốc Xe
           </h2>
-          <span id="driver-trip-badge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+          <span id="driver-trip-badge" class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#22242a] text-[#9ca3af] border border-white/[0.08]">
             CHỜ CUỐC
           </span>
         </div>
 
         <!-- Empty state when no trip -->
         <div id="driver-no-trip" class="py-8 text-center space-y-2">
-          <div class="w-10 h-10 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div class="w-10 h-10 mx-auto rounded-lg bg-[#22242a] border border-white/[0.08] flex items-center justify-center text-[#6b7280]">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           </div>
-          <p class="text-xs text-slate-400">Đang chờ cuốc xe mới từ hệ thống điều phối...</p>
-          <p class="text-[10px] text-slate-500">Hãy giữ ứng dụng luôn bật để nhận chuyến sớm nhất</p>
+          <p class="text-xs text-[#9ca3af]">Đang chờ cuốc xe mới từ hệ thống điều phối...</p>
+          <p class="text-[10px] text-[#6b7280]">Hãy giữ ứng dụng luôn bật để nhận chuyến sớm nhất</p>
         </div>
 
         <!-- Active Trip Card for Driver -->
-        <div id="driver-active-trip" class="hidden space-y-3 pt-3 border-t border-slate-800">
+        <div id="driver-active-trip" class="hidden space-y-3 pt-3 border-t border-white/[0.08]">
           <div class="space-y-2 text-xs">
             <div class="flex justify-between">
-              <span class="text-slate-400">Mã chuyến:</span>
-              <span id="driver-trip-id" class="font-mono text-slate-300 text-[11px] truncate max-w-[170px]">---</span>
+              <span class="text-[#9ca3af]">Mã chuyến:</span>
+              <span id="driver-trip-id" class="font-mono text-[#f3f4f6] text-[11px] truncate max-w-[170px]">---</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-400">Hành khách:</span>
-              <span id="driver-passenger-name" class="font-medium text-slate-200">Nguyễn Văn A</span>
+              <span class="text-[#9ca3af]">Hành khách:</span>
+              <span id="driver-passenger-name" class="font-medium text-[#f3f4f6]">Nguyễn Văn A</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-400">Cước thu:</span>
-              <span id="driver-trip-fare" class="font-bold text-emerald-400 font-mono tabular-nums">--- đ</span>
+              <span class="text-[#9ca3af]">Cước thu:</span>
+              <span id="driver-trip-fare" class="font-bold text-amber-400 font-mono tabular-nums">--- đ</span>
             </div>
-            <div class="pt-1.5 border-t border-slate-800/80 space-y-1 text-[11px]">
-              <div class="text-slate-400 flex items-start gap-1">
+            <div class="pt-1.5 border-t border-white/[0.06] space-y-1 text-[11px]">
+              <div class="text-[#9ca3af] flex items-start gap-1">
                 <span class="text-emerald-400 shrink-0">Đón:</span>
-                <span id="driver-trip-pickup" class="text-slate-200 truncate">Hồ Hoàn Kiếm, Hà Nội</span>
+                <span id="driver-trip-pickup" class="text-[#f3f4f6] truncate">Hồ Hoàn Kiếm, Hà Nội</span>
               </div>
-              <div class="text-slate-400 flex items-start gap-1">
+              <div class="text-[#9ca3af] flex items-start gap-1">
                 <span class="text-amber-400 shrink-0">Trả:</span>
-                <span id="driver-trip-dropoff" class="text-slate-200 truncate">Landmark 72, Hà Nội</span>
+                <span id="driver-trip-dropoff" class="text-[#f3f4f6] truncate">Landmark 72, Hà Nội</span>
               </div>
             </div>
           </div>
 
           <!-- Driver Action Buttons -->
           <div class="space-y-2 pt-1">
-            <button id="btn-driver-accept" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] flex items-center justify-center gap-1.5">
+            <button id="btn-driver-accept" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
               <span>Nhận Chuyến Xe</span>
             </button>
-            <button id="btn-driver-start" class="hidden w-full bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] flex items-center justify-center gap-1.5">
+            <button id="btn-driver-start" class="hidden w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
               <span>Bắt Đầu Đón Khách</span>
             </button>
-            <button id="btn-driver-complete" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] flex items-center justify-center gap-1.5">
+            <button id="btn-driver-complete" class="hidden w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-sm">
               <span>Hoàn Thành Chuyến Đi</span>
             </button>
           </div>
@@ -682,11 +688,11 @@
     </div>
 
     <!-- Right Column: Driver Hanoi Leaflet Map (8 cols) -->
-    <div class="lg:col-span-8 flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden relative min-h-[450px]">
+    <div class="lg:col-span-8 flex flex-col bg-[#18191d] border border-white/[0.08] rounded-xl overflow-hidden relative min-h-[450px]">
       <div id="driver-map" class="w-full h-full flex-1 min-h-[450px]"></div>
 
       <!-- Driver Location Legend Overlay -->
-      <div class="absolute bottom-3 right-3 z-[400] bg-slate-900/90 backdrop-blur-sm px-2.5 py-1.5 rounded-md border border-slate-800 text-[10px] text-slate-300 flex items-center space-x-3 shadow">
+      <div class="absolute bottom-3 right-3 z-[400] bg-[#18191d]/90 backdrop-blur-sm px-2.5 py-1.5 rounded-md border border-white/[0.08] text-[10px] text-[#9ca3af] flex items-center space-x-3 shadow">
         <div class="flex items-center space-x-1">
           <span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span>
           <span>Vị trí của bạn</span>
@@ -700,17 +706,17 @@
   </section>
 
   <!-- Modal: Confirmation Dialog for Canceling Trip -->
-  <div id="cancel-confirm-modal" class="hidden fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-sm w-full space-y-3.5 shadow-2xl">
+  <div id="cancel-confirm-modal" class="hidden fixed inset-0 z-[1200] flex items-center justify-center bg-[#121316]/80 backdrop-blur-sm p-4">
+    <div class="bg-[#18191d] border border-white/[0.08] rounded-xl p-5 max-w-sm w-full space-y-3.5 shadow-2xl">
       <div class="flex items-center space-x-2 text-red-400">
-        <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <h3 class="text-sm font-bold text-slate-100">Xác Nhận Hủy Chuyến</h3>
+        <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <h3 class="text-sm font-semibold text-[#f3f4f6]">Xác Nhận Hủy Chuyến</h3>
       </div>
-      <p class="text-xs text-slate-300 leading-relaxed">
+      <p class="text-xs text-[#9ca3af] leading-relaxed">
         Bạn có chắc chắn muốn hủy chuyến xe này? Cước phí tạm giữ sẽ được hoàn trả nguyên vẹn vào ví điện tử của bạn ngay tức thì.
       </p>
-      <div class="flex justify-end space-x-2 pt-2 border-t border-slate-800">
-        <button id="btn-cancel-modal-close" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-lg transition">
+      <div class="flex justify-end space-x-2 pt-2 border-t border-white/[0.08]">
+        <button id="btn-cancel-modal-close" class="bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs px-3 py-1.5 rounded-lg border border-white/[0.08] transition">
           Giữ Chuyến
         </button>
         <button id="btn-cancel-modal-confirm" class="bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-3.5 py-1.5 rounded-lg transition active:scale-[0.98]">
@@ -721,109 +727,109 @@
   </div>
 
   <!-- Modal: Wallet Topup Dialog -->
-  <div id="topup-modal" class="hidden fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
-      <div class="flex items-center justify-between pb-2 border-b border-slate-800">
-        <h3 class="text-sm font-bold text-slate-100 flex items-center gap-1.5">
-          <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+  <div id="topup-modal" class="hidden fixed inset-0 z-[1200] flex items-center justify-center bg-[#121316]/80 backdrop-blur-sm p-4">
+    <div class="bg-[#18191d] border border-white/[0.08] rounded-xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between pb-2 border-b border-white/[0.08]">
+        <h3 class="text-sm font-semibold text-[#f3f4f6] flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           Nạp Tiền Vào Ví Điện Tử
         </h3>
-        <button id="btn-topup-close" class="text-slate-400 hover:text-slate-200 text-xs">✕</button>
+        <button id="btn-topup-close" class="text-[#9ca3af] hover:text-[#f3f4f6] text-xs p-1">✕</button>
       </div>
       <div>
-        <label class="block text-xs text-slate-400 mb-1.5">Chọn mệnh giá nạp (VNĐ):</label>
+        <label class="block text-xs text-[#9ca3af] mb-1.5">Chọn mệnh giá nạp (VNĐ):</label>
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" data-amount="50000" class="btn-preset-topup bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2 rounded border border-slate-700 transition">50,000 đ</button>
-          <button type="button" data-amount="100000" class="btn-preset-topup bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2 rounded border border-slate-700 transition font-bold text-blue-400">100,000 đ</button>
-          <button type="button" data-amount="200000" class="btn-preset-topup bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2 rounded border border-slate-700 transition">200,000 đ</button>
-          <button type="button" data-amount="500000" class="btn-preset-topup bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2 rounded border border-slate-700 transition">500,000 đ</button>
+          <button type="button" data-amount="50000" class="btn-preset-topup bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs py-2 rounded-lg border border-white/[0.08] font-mono tabular-nums transition">50,000 đ</button>
+          <button type="button" data-amount="100000" class="btn-preset-topup bg-[#22242a] hover:bg-[#2a2c34] text-amber-400 font-bold text-xs py-2 rounded-lg border border-amber-500/30 font-mono tabular-nums transition">100,000 đ</button>
+          <button type="button" data-amount="200000" class="btn-preset-topup bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs py-2 rounded-lg border border-white/[0.08] font-mono tabular-nums transition">200,000 đ</button>
+          <button type="button" data-amount="500000" class="btn-preset-topup bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs py-2 rounded-lg border border-white/[0.08] font-mono tabular-nums transition">500,000 đ</button>
         </div>
       </div>
       <div>
-        <label for="input-custom-topup" class="block text-xs text-slate-400 mb-1">Hoặc nhập số tiền khác (tối thiểu 10.000 đ):</label>
-        <input id="input-custom-topup" type="number" step="10000" min="10000" value="100000" class="w-full bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 focus:border-blue-500 focus:outline-none" />
+        <label for="input-custom-topup" class="block text-xs text-[#9ca3af] mb-1">Hoặc nhập số tiền khác (tối thiểu 10.000 đ):</label>
+        <input id="input-custom-topup" type="number" step="10000" min="10000" value="100000" class="w-full bg-[#22242a] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus:outline-none font-mono" />
       </div>
-      <button id="btn-submit-topup" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98]">
+      <button id="btn-submit-topup" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold py-2.5 rounded-lg transition active:scale-[0.98] shadow-sm">
         Xác Nhận Nạp Tiền
       </button>
     </div>
   </div>
 
   <!-- Diagnostics Backdrop to close drawer on outside click -->
-  <div id="diagnostics-backdrop" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-[2px] z-[1090] transition-opacity"></div>
+  <div id="diagnostics-backdrop" class="hidden fixed inset-0 bg-[#121316]/60 backdrop-blur-[2px] z-[1090] transition-opacity"></div>
 
   <!-- Off-Canvas Diagnostics & Live Distribution Drawer -->
-  <aside id="diagnostics-drawer" class="hidden fixed inset-y-0 right-0 w-full sm:w-[480px] bg-slate-900 border-l border-slate-800 z-[1100] flex flex-col shadow-2xl">
-    <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+  <aside id="diagnostics-drawer" class="hidden fixed inset-y-0 right-0 w-full sm:w-[480px] bg-[#18191d] border-l border-white/[0.08] z-[1100] flex flex-col shadow-2xl">
+    <div class="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between bg-[#141519]">
       <div class="flex items-center space-x-2">
-        <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">Bảng Giám Sát Phân Bổ & Trạng Thái Dịch Vụ</span>
+        <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span class="text-xs font-semibold text-[#f3f4f6] uppercase tracking-wider">Bảng Giám Sát Phân Bổ & Trạng Thái Dịch Vụ</span>
       </div>
-      <button id="btn-close-diagnostics" class="p-1 rounded text-slate-400 hover:text-white" title="Đóng bảng">✕</button>
+      <button id="btn-close-diagnostics" class="p-1 rounded-md text-[#9ca3af] hover:text-white" title="Đóng bảng">✕</button>
     </div>
 
     <!-- Health Indicators Bar -->
-    <div class="px-4 py-2 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between text-[11px] font-mono">
+    <div class="px-4 py-2 bg-[#141519]/60 border-b border-white/[0.08] flex items-center justify-between text-[11px] font-mono">
       <div class="flex items-center space-x-1.5">
         <span id="gateway-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
-        <span class="text-slate-400">Gateway :8080</span>
+        <span class="text-[#9ca3af]">Gateway :8080</span>
       </div>
       <div class="flex items-center space-x-1.5">
         <span id="payment-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
-        <span class="text-slate-400">Payment :8005</span>
+        <span class="text-[#9ca3af]">Payment :8005</span>
       </div>
       <div class="flex items-center space-x-1.5">
         <span id="notification-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
-        <span class="text-slate-400">Notif :8006</span>
+        <span class="text-[#9ca3af]">Notif :8006</span>
       </div>
       <div class="flex items-center space-x-1.5">
         <span id="sse-indicator" class="w-2 h-2 rounded-full bg-red-500"></span>
-        <span class="text-slate-400">SSE</span>
+        <span class="text-[#9ca3af]">SSE</span>
       </div>
     </div>
 
     <!-- Live Driver Distribution & Supply Metrics -->
-    <div class="px-4 py-2.5 bg-slate-950/80 border-b border-slate-800 text-xs">
+    <div class="px-4 py-2.5 bg-[#141519]/80 border-b border-white/[0.08] text-xs">
       <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Phân Bổ Tài Xế Trực Tiếp</span>
+        <span class="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wider">Phân Bổ Tài Xế Trực Tiếp</span>
         <span class="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
           Đang hoạt động
         </span>
       </div>
       <div class="grid grid-cols-4 gap-2 text-center text-[11px] font-mono">
-        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
-          <div class="text-emerald-400 font-bold" id="dist-count-available">2</div>
-          <div class="text-[9px] text-slate-400">AVAILABLE</div>
+        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
+          <div class="text-emerald-400 font-bold tabular-nums" id="dist-count-available">2</div>
+          <div class="text-[9px] text-[#9ca3af]">AVAILABLE</div>
         </div>
-        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
-          <div class="text-amber-400 font-bold" id="dist-count-reserved">0</div>
-          <div class="text-[9px] text-slate-400">RESERVED</div>
+        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
+          <div class="text-amber-400 font-bold tabular-nums" id="dist-count-reserved">0</div>
+          <div class="text-[9px] text-[#9ca3af]">RESERVED</div>
         </div>
-        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
-          <div class="text-sky-400 font-bold" id="dist-count-busy">0</div>
-          <div class="text-[9px] text-slate-400">BUSY</div>
+        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
+          <div class="text-sky-400 font-bold tabular-nums" id="dist-count-busy">0</div>
+          <div class="text-[9px] text-[#9ca3af]">BUSY</div>
         </div>
-        <div class="bg-slate-900 p-1.5 rounded border border-slate-800">
-          <div class="text-slate-400 font-bold" id="dist-count-offline">0</div>
-          <div class="text-[9px] text-slate-400">OFFLINE</div>
+        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
+          <div class="text-[#9ca3af] font-bold tabular-nums" id="dist-count-offline">0</div>
+          <div class="text-[9px] text-[#9ca3af]">OFFLINE</div>
         </div>
       </div>
-      <div class="mt-2 text-[10px] text-slate-400 flex items-center justify-between">
+      <div class="mt-2 text-[10px] text-[#9ca3af] flex items-center justify-between">
         <span>Khu vực: Toàn quốc (Hà Nội, Đà Nẵng, TP.HCM)</span>
-        <span class="text-slate-500">Radius: 5km</span>
+        <span class="text-[#6b7280]">Radius: 5km</span>
       </div>
     </div>
 
     <!-- Filter input -->
-    <div class="p-3 border-b border-slate-800 flex gap-2">
-      <input id="log-filter-corr" type="text" placeholder="Lọc theo Correlation-ID..." class="flex-1 bg-slate-950 text-xs text-slate-200 border border-slate-700 rounded px-2.5 py-1.5 focus:border-blue-500 focus:outline-none font-mono" />
-      <button id="btn-clear-logs" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-2.5 py-1.5 rounded transition">Xóa Nhật Ký</button>
+    <div class="p-3 border-b border-white/[0.08] flex gap-2">
+      <input id="log-filter-corr" type="text" placeholder="Lọc theo Correlation-ID..." class="flex-1 bg-[#121316] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus:outline-none font-mono" />
+      <button id="btn-clear-logs" class="bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs px-2.5 py-1.5 rounded-lg border border-white/[0.08] transition">Xóa Nhật Ký</button>
     </div>
 
     <!-- Telemetry Log Stream Container -->
     <div id="logs-container" class="flex-1 p-3 overflow-y-auto space-y-2 font-mono text-[11px]">
-      <div class="p-3 text-center text-xs text-slate-500">Đang chờ sự kiện SSE từ hệ thống phân tán...</div>
+      <div class="p-3 text-center text-xs text-[#6b7280]">Đang chờ sự kiện SSE từ hệ thống phân tán...</div>
     </div>
   </aside>
 
@@ -831,6 +837,6 @@
   <div id="toast-container" class="fixed bottom-4 right-4 z-[1300] flex flex-col space-y-2 pointer-events-none"></div>
 
   <!-- Main JavaScript Bundle -->
-  <script src="/app.js?v=2.5.2"></script>
+  <script src="/app.js?v=2.6.0"></script>
 </body>
 </html>
