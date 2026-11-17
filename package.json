@@ -8,21 +8,7 @@
   },
   "scripts": {
     "check": "node scripts/check.js",
-    "test": "node tests/run-all.js",
-    "test:all": "node tests/run-all.js",
-    "test:unit": "node tests/run-unit.js",
-    "test:service": "node tests/run-service.js",
-    "test:broker": "node src/matching-service/broker.integration.cjs",
-    "test:ping": "node tests/ping-all.js",
-    "test:benchmark": "node tests/load-performance.experiment.js",
-    "test:e2e": "node tests/run-e2e-all.js",
-    "test:browser": "node tests/browser-e2e.test.js",
-    "test:tv1": "node tests/run-all-tv1.js",
-    "test:tv2": "node tests/run-all-tv2.js",
-    "test:tv3": "node tests/run-all-tv3.js",
-    "test:identity": "node tests/identity.test.js",
-    "test:trip": "node tests/trip.test.js",
-    "test:saga": "node tests/saga.test.js"
+    "seed": "node scripts/seed-demo.js"
   },
   "keywords": [
     "distributed-systems",
@@ -32,8 +18,5 @@
     "sqlite"
   ],
   "author": "DarkBre",
-  "license": "UNLICENSED",
-  "devDependencies": {
-    "playwright": "^1.65.1"
-  }
+  "license": "UNLICENSED"
 }

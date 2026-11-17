@@ -5,8 +5,7 @@
   "description": "DS03 Notification Consumer for passengers and drivers",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "node --test"
+    "start": "node index.js"
   },
   "dependencies": {
     "amqplib": "^0.10.9"

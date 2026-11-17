@@ -5,8 +5,7 @@
   "description": "DS03 Simulated Payment Microservice with Transactional Outbox, Idempotency and DLQ",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "node --test"
+    "start": "node index.js"
   },
   "dependencies": {
     "amqplib": "^0.10.4",
