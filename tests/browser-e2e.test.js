@@ -318,45 +318,44 @@ async function runBrowserTests() {
     recordResult('UI-04A', 'Kéo bản đồ tự do bằng chuột', 'FAIL', Date.now() - tPan, err.message);
   }
 
-  // Test UI-04B: City Jump Navigation to TP.HCM, picking outside Hanoi, Country View, Hanoi Return
-  const tJump = Date.now();
+  // Test UI-04B: Loại bỏ các nút chọn nhanh thành phố và icon live distribution, điều hướng tự do qua tìm kiếm
+  const tClean = Date.now();
   try {
-    // 1. Nhảy đến TP. Hồ Chí Minh
-    await page.click('#btn-jump-hcm');
-    await page.waitForTimeout(500);
+    // 1. Kiểm tra xác nhận các nút chọn nhanh thành phố và icon live distribution đã bị xoá khỏi bản đồ
+    const hasHanoi = await page.$('#btn-jump-hanoi');
+    const hasDanang = await page.$('#btn-jump-danang');
+    const hasHcm = await page.$('#btn-jump-hcm');
+    const hasCountry = await page.$('#btn-jump-country');
+    const hasMapDist = await page.$('#btn-map-open-distribution');
+
+    if (hasHanoi || hasDanang || hasHcm || hasCountry || hasMapDist) {
+      throw new Error('Các nút chọn nhanh thành phố hoặc icon Live Distribution vẫn còn tồn tại trên thanh công cụ bản đồ');
+    }
+
+    // 2. Tìm kiếm địa điểm TP.HCM qua ô tìm kiếm Google Maps để điều hướng tự do
+    await page.fill('#input-map-search', 'Bến Thành');
+    await page.waitForSelector('#map-search-suggestions:not(.hidden)', { timeout: 3000 });
+    await page.click('.search-suggestion-item:first-child');
+    await page.waitForTimeout(700);
+
+    // Đóng popup nếu xuất hiện và kiểm tra tâm bản đồ đã di chuyển đến khu vực TP.HCM (~10.77)
+    await page.keyboard.press('Escape');
     const hcmCenter = await page.evaluate(() => window.passengerMap.getCenter());
-    if (Math.abs(hcmCenter.lat - 10.7769) > 0.1) {
-      throw new Error(`Tâm bản đồ không ở TP.HCM: lat=${hcmCenter.lat}`);
+    if (Math.abs(hcmCenter.lat - 10.7725) > 0.1) {
+      throw new Error(`Bản đồ không điều hướng đến TP.HCM qua tìm kiếm: lat=${hcmCenter.lat}`);
     }
 
-    // 2. Click chọn điểm đón tại TP.HCM
-    await page.click('#btn-pick-pickup');
-    await page.click('#passenger-map', { position: { x: 500, y: 350 } });
-    await page.waitForTimeout(300);
-    const pickupLatHcm = parseFloat(await page.textContent('#text-pickup-lat'));
-    if (pickupLatHcm < 10.0 || pickupLatHcm > 11.5) {
-      throw new Error(`Điểm đón không thuộc toạ độ TP.HCM: lat=${pickupLatHcm}`);
-    }
-
-    // 3. Nhảy thu nhỏ Toàn Quốc
-    await page.click('#btn-jump-country');
-    await page.waitForTimeout(500);
-    const countryZoom = await page.evaluate(() => window.passengerMap.getZoom());
-    if (countryZoom > 7) {
-      throw new Error(`Mức zoom toàn quốc không đạt yêu cầu (<= 7): zoom=${countryZoom}`);
-    }
-
-    // 4. Nhảy trở lại Hà Nội
-    await page.click('#btn-jump-hanoi');
+    // 3. Đặt lại điểm mẫu mặc định tại Hà Nội
+    await page.click('#btn-map-reset-points');
     await page.waitForTimeout(500);
     const hanoiCenter = await page.evaluate(() => window.passengerMap.getCenter());
     if (Math.abs(hanoiCenter.lat - 21.0285) > 0.1) {
-      throw new Error(`Tâm bản đồ không trở về Hà Nội: lat=${hanoiCenter.lat}`);
+      throw new Error(`Tâm bản đồ không trở về Hà Nội sau khi bấm Đặt Lại: lat=${hanoiCenter.lat}`);
     }
 
-    recordResult('UI-04B', 'Điều hướng nhanh vùng miền (Hà Nội, Đà Nẵng, TP.HCM, Toàn Quốc) và chọn điểm ngoại tỉnh', 'PASS', Date.now() - tJump, `TP.HCM Lat=${pickupLatHcm}, Country Zoom=${countryZoom}`);
+    recordResult('UI-04B', 'Bản đồ tinh gọn: Đã loại bỏ các nút chọn nhanh thành phố và icon Live Distribution, điều hướng tự do qua thanh tìm kiếm', 'PASS', Date.now() - tClean, `Tâm TP.HCM lat=${hcmCenter.lat.toFixed(4)}, Tâm Hà Nội lat=${hanoiCenter.lat.toFixed(4)}`);
   } catch (err) {
-    recordResult('UI-04B', 'Điều hướng nhanh vùng miền', 'FAIL', Date.now() - tJump, err.message);
+    recordResult('UI-04B', 'Bản đồ tinh gọn và điều hướng tìm kiếm', 'FAIL', Date.now() - tClean, err.message);
   }
 
   // Test UI-04D: Pick Mode Banner, Cancel Button & Escape Key
@@ -848,15 +847,15 @@ async function runBrowserTests() {
   // Restore desktop viewport
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  // Test UI-14: Live Distribution Drawer & Map Toolbar Integration
+  // Test UI-14: Live Distribution Drawer & Navigation Integration
   const tDiag = Date.now();
   try {
     // Đảm bảo không còn popover che khuất
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
 
-    // 1. Mở Live Distribution trực tiếp từ nút trên thanh công cụ bản đồ
-    await page.click('#btn-map-open-distribution');
+    // 1. Mở Live Distribution từ nút công cụ góc phải trên thanh điều hướng (#btn-toggle-diagnostics)
+    await page.click('#btn-toggle-diagnostics');
     await page.waitForSelector('#diagnostics-drawer:not(.hidden)', { state: 'visible', timeout: 3000 });
 
     // 2. Đối chiếu số liệu phân bổ tài xế (SSOT)
@@ -872,13 +871,13 @@ async function runBrowserTests() {
     const isHiddenAfterClose = await page.$eval('#diagnostics-drawer', (el) => el.classList.contains('hidden'));
     if (!isHiddenAfterClose) throw new Error('Ngăn kéo Live Distribution không đóng sau khi bấm nút Đóng');
 
-    // 4. Mở lại bằng nút công cụ góc phải trên thanh điều hướng để đảm bảo không có dead button
+    // 4. Mở lại và đóng bằng phím Escape để xác nhận phím tắt hoạt động mượt mà
     await page.click('#btn-toggle-diagnostics');
     await page.waitForSelector('#diagnostics-drawer:not(.hidden)', { state: 'visible', timeout: 3000 });
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
 
-    recordResult('UI-14', 'Mở bảng Live Distribution từ bản đồ, đối chiếu chỉ số phân bổ tài xế và đóng an toàn không che khuất', 'PASS', Date.now() - tDiag, `Available: ${availCount}, Reserved: ${reservedCount}, Busy: ${busyCount}, Offline: ${offlineCount}`);
+    recordResult('UI-14', 'Mở bảng Live Distribution từ thanh điều hướng, đối chiếu chỉ số phân bổ tài xế và đóng an toàn', 'PASS', Date.now() - tDiag, `Available: ${availCount}, Reserved: ${reservedCount}, Busy: ${busyCount}, Offline: ${offlineCount}`);
     recordResult('UI-15', 'Toàn bộ giao diện hoạt động tái lập từ image build nguồn gốc', 'PASS', Date.now() - tDiag);
   } catch (err) {
     recordResult('UI-14', 'Kiểm tra Live Distribution và nút điều hướng', 'FAIL', Date.now() - tDiag, err.message);

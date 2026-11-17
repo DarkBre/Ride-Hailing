@@ -1536,19 +1536,6 @@ function setupMapSearchAndControls() {
   const myLocationBtn = document.getElementById('btn-map-my-location');
   const fullscreenBtn = document.getElementById('btn-map-fullscreen');
   const mapWrapper = document.getElementById('passenger-map-wrapper');
-  const openDistBtn = document.getElementById('btn-map-open-distribution');
-
-  if (openDistBtn) {
-    openDistBtn.addEventListener('click', () => {
-      const drawer = document.getElementById('diagnostics-drawer');
-      const backdrop = document.getElementById('diagnostics-backdrop');
-      if (drawer) {
-        drawer.classList.remove('hidden');
-        backdrop?.classList.remove('hidden');
-        pollDiagnosticsHealth();
-      }
-    });
-  }
 
   if (fullscreenBtn && mapWrapper) {
     fullscreenBtn.addEventListener('click', () => {
@@ -1972,36 +1959,10 @@ function bindEvents() {
     cancelMapPickMode();
     setPickupCoordinates(21.0285, 105.8544, 'Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội');
     setDropoffCoordinates(21.0173, 105.7839, 'Landmark 72, Nam Từ Liêm, Hà Nội');
-    showToast('Đã đặt lại điểm mẫu mặc định', 'info');
-  });
-
-  // Quick Region / City Jump Navigation
-  document.getElementById('btn-jump-hanoi')?.addEventListener('click', () => {
     if (passengerMap) {
       passengerMap.setView([21.0285, 105.8544], 13);
-      showToast('Đã di chuyển bản đồ đến khu vực Hà Nội', 'info');
     }
-  });
-
-  document.getElementById('btn-jump-danang')?.addEventListener('click', () => {
-    if (passengerMap) {
-      passengerMap.setView([16.0544, 108.2022], 13);
-      showToast('Đã di chuyển bản đồ đến khu vực Đà Nẵng', 'info');
-    }
-  });
-
-  document.getElementById('btn-jump-hcm')?.addEventListener('click', () => {
-    if (passengerMap) {
-      passengerMap.setView([10.7769, 106.7009], 13);
-      showToast('Đã di chuyển bản đồ đến TP. Hồ Chí Minh', 'info');
-    }
-  });
-
-  document.getElementById('btn-jump-country')?.addEventListener('click', () => {
-    if (passengerMap) {
-      passengerMap.setView([16.0471, 106.5], 6);
-      showToast('Đã mở rộng tầm nhìn toàn cảnh Việt Nam', 'info');
-    }
+    showToast('Đã đặt lại điểm mẫu mặc định', 'info');
   });
 
   // Booking & Trip Actions
