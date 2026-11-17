@@ -162,3 +162,13 @@ Sau khi khởi chạy hoàn tất:
     ├── trip-service/           # Vòng đời chuyến đi & Saga (Port 8003)
     └── web-dashboard/          # Giao diện web mô phỏng (Port 3000)
 ```
+
+---
+
+## 7. Phân Công Trách Nhiệm Thành Viên
+
+| Thành viên | Phân hệ / Dịch vụ phụ trách chính | Đóng góp kỹ thuật cốt lõi |
+| :--- | :--- | :--- |
+| **Thành viên 1**<br>*(Nguyễn Đức - DarkBre)<br>**Trưởng nhóm** | • `Identity Service` (:8001)<br>• `Trip Booking Service` (:8003)<br>• Saga Coordinator & Dynamic Pricing | • Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.<br>• Thuật toán định giá động Dynamic Pricing Engine (Haversine GPS + Surge Multiplier).<br>• Điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ 2 chiều (Refund / Release driver).<br>• Bảo mật xác thực JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key. |
+| **Thành viên 2**<br>*(Dương Quốc Hoàng)* | • `Driver Location Service` (:8002)<br>• `Matching Service` (:8004)<br>• Driver PostgreSQL Database | • Xây dựng cơ sở dữ liệu `driver_db` và `match_db` trên PostgreSQL 17.<br>• Giao thức đặt trước tài xế Driver Reservation Protocol (`HELD`, `CONFIRMED`, `RELEASED`, `EXPIRED`).<br>• Kiểm soát tranh chấp đồng thời bằng CAS Optimistic Lock (`version`) + `FOR UPDATE SKIP LOCKED`.<br>• Thuật toán định vị và lọc tài xế theo bán kính không gian Haversine Geospatial Filter. |
+| **Thành viên 3**<br>*(Minh Quang - Quangdz1125)* | • `Payment Service` (:8005)<br>• `Notification Service` (:8006)<br>• `API Gateway` (:8080)<br>• `Web Dashboard` (:3000)<br>• Hạ tầng Docker & RabbitMQ | • Triển khai Payment Service với quản lý số dư ví, Row-Level Lock và Transactional Outbox Pattern.<br>• Thiết lập RabbitMQ 4 Topology: Topic Exchange `trip.exchange`, Dead-Letter Queue `trip.dlq`, Bounded Retries.<br>• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (`X-Correlation-ID`).<br>• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).<br>• Đóng gói Docker Compose 10 containers với healthcheck tự động. |
