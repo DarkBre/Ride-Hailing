@@ -14,6 +14,7 @@
     "test:service": "node tests/run-service.js",
     "test:broker": "node src/matching-service/broker.integration.cjs",
     "test:ping": "node tests/ping-all.js",
+    "test:benchmark": "node tests/load-performance.experiment.js",
     "test:e2e": "node tests/run-e2e-all.js",
     "test:browser": "node tests/browser-e2e.test.js",
     "test:tv1": "node tests/run-all-tv1.js",

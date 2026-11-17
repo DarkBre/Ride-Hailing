@@ -133,13 +133,34 @@ cp .env.example .env
 # 2. Kiểm tra runtime Node >= 22.13.0 & node:sqlite
 node scripts/check.js
 
-# 3. Khởi động toàn bộ stack bằng Docker Compose (sau bước hợp nhất code)
+# 3. Khởi động toàn bộ stack bằng Docker Compose
 docker compose -f deploy/docker-compose.yml --profile full up -d --build
+
+# 4. Khởi tạo dữ liệu mẫu (tài khoản demo, ví tiền, tài xế và toạ độ ban đầu)
+node scripts/seed-demo.js
 ```
 
-### 5.3. Các cổng dịch vụ mặc định
+### 5.3. Hướng dẫn chạy các bộ kiểm thử tự động
+```bash
+# Chạy bộ kiểm thử tích hợp toàn diện 3 thành viên (157 unit/service tests)
+npm test
+
+# Chạy kiểm thử tự động giao diện trình duyệt qua Playwright (32 UI E2E tests)
+npm run test:browser
+
+# Chạy kiểm thử End-to-End toàn diện qua Docker (4 kịch bản phân tán cao cấp)
+npm run test:e2e
+
+# Đo lường hiệu năng Throughput & Latency qua API Gateway (500 reqs, p50/p95/p99)
+npm run test:benchmark
+
+# Kiểm tra sức khoẻ toàn bộ 9 container/endpoints đang chạy
+npm run test:ping
+```
+
+### 5.4. Các cổng dịch vụ mặc định
 * **API Gateway:** `http://localhost:8080`
-* **Web Dashboard:** `http://localhost:3000`
+* **Web Dashboard:** `http://localhost:3000` (Giao diện Unslop Urban Transit, Dark Graphite)
 * **RabbitMQ Management UI:** `http://localhost:15672` *(Quan sát trực tiếp `payment.queue`, `matching.queue`, `trip.queue`, `trip.dlq`)*
 * **Business Services:** Identity `8001` | Driver `8002` | Trip `8003` | Matching `8004` | Payment `8005` | Notification `8006`
 * **PostgreSQL:** `5432`
