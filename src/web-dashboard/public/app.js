@@ -243,7 +243,7 @@ function renderNotifications() {
   }
 
   if (state.notifications.length === 0) {
-    listEl.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">Chưa có thông báo nào</div>';
+    listEl.innerHTML = '<div class="p-6 text-center text-xs text-slate-500">Không có thông báo mới</div>';
     return;
   }
 
@@ -523,10 +523,10 @@ function setMapInteractionMode(mode) {
     document.body.style.cursor = 'crosshair';
     if (banner) {
       banner.classList.remove('hidden');
-      if (bannerText) bannerText.textContent = '📍 Click lên bản đồ để chọn Điểm Đón';
+      if (bannerText) bannerText.textContent = '📍 Nhấp lên bản đồ để chọn Điểm Đón';
     }
     if (cancelBtn) cancelBtn.classList.remove('hidden');
-    showToast('Hãy nhấp vào bản đồ để chọn điểm đón...', 'info');
+    showToast('Vui lòng nhấp vào bản đồ để chọn điểm đón...', 'info');
   } else if (mode === 'dropoff') {
     if (btnPan) btnPan.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
     if (btnPin) btnPin.className = 'text-slate-300 hover:text-white px-2 py-1 rounded transition flex items-center gap-1';
@@ -534,10 +534,10 @@ function setMapInteractionMode(mode) {
     document.body.style.cursor = 'crosshair';
     if (banner) {
       banner.classList.remove('hidden');
-      if (bannerText) bannerText.textContent = '🏁 Click lên bản đồ để chọn Điểm Đến';
+      if (bannerText) bannerText.textContent = '🏁 Nhấp lên bản đồ để chọn Điểm Đến';
     }
     if (cancelBtn) cancelBtn.classList.remove('hidden');
-    showToast('Hãy nhấp vào bản đồ để chọn điểm đến...', 'info');
+    showToast('Vui lòng nhấp vào bản đồ để chọn điểm đến...', 'info');
   }
 }
 
@@ -972,11 +972,11 @@ async function handleTopup(amount) {
   });
 
   if (res.ok) {
-    showToast(`Đã nạp ${Number(amount).toLocaleString('vi-VN')} đ vào ví!`, 'success');
+    showToast(`Đã nạp thành công ${Number(amount).toLocaleString('vi-VN')} đ vào ví!`, 'success');
     document.getElementById('topup-modal')?.classList.add('hidden');
     fetchWalletBalance();
   } else {
-    showToast(res.error?.message || 'Nạp ví thất bại', 'error');
+    showToast(res.error?.message || 'Nạp ví không thành công', 'error');
   }
 }
 
@@ -1001,25 +1001,25 @@ async function fetchDriverProfile() {
         statusTextEl.textContent = 'AVAILABLE';
         statusTextEl.className = 'text-[11px] font-mono font-bold text-emerald-400';
         toggleBtn.disabled = false;
-        toggleBtn.textContent = 'Đang Sẵn Sàng (Bấm để Nghỉ)';
+        toggleBtn.textContent = 'Đang Sẵn Sàng (Bấm để Tạm Nghỉ)';
         toggleBtn.className = 'flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]';
       } else if (state.driverStatus === 'RESERVED') {
         statusTextEl.textContent = 'RESERVED (Đang giữ chuyến)';
         statusTextEl.className = 'text-[11px] font-mono font-bold text-amber-400';
         toggleBtn.disabled = true;
-        toggleBtn.textContent = 'Đang giữ chuyến (Chờ xác nhận)...';
+        toggleBtn.textContent = 'Đang điều phối (Chờ nhận chuyến)...';
         toggleBtn.className = 'flex-1 bg-amber-600/30 text-amber-300 text-xs font-semibold py-2 rounded-lg border border-amber-500/30 cursor-not-allowed';
       } else if (state.driverStatus === 'BUSY') {
         statusTextEl.textContent = 'BUSY (Đang phục vụ)';
         statusTextEl.className = 'text-[11px] font-mono font-bold text-sky-400';
         toggleBtn.disabled = true;
-        toggleBtn.textContent = 'Đang phục vụ chuyến đi...';
+        toggleBtn.textContent = 'Đang trong chuyến đi...';
         toggleBtn.className = 'flex-1 bg-sky-600/30 text-sky-300 text-xs font-semibold py-2 rounded-lg border border-sky-500/30 cursor-not-allowed';
       } else {
         statusTextEl.textContent = 'OFFLINE';
         statusTextEl.className = 'text-[11px] font-mono font-bold text-slate-400';
         toggleBtn.disabled = false;
-        toggleBtn.textContent = 'Đang Nghỉ (Bấm để Sẵn Sàng)';
+        toggleBtn.textContent = 'Đang Tạm Nghỉ (Bấm để Sẵn Sàng)';
         toggleBtn.className = 'flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold py-2 rounded-lg transition active:scale-[0.98]';
       }
     }
@@ -1160,11 +1160,11 @@ async function handleDriverAcceptTrip() {
   if (btn) btn.disabled = false;
 
   if (res.ok) {
-    showToast('Đã nhận cuốc xe! Vui lòng di chuyển đến điểm đón.', 'success');
+    showToast('Đã nhận chuyến xe! Vui lòng di chuyển đến điểm đón khách.', 'success');
     await pollDriverActiveTrip();
     await fetchDriverProfile();
   } else {
-    showToast(res.error?.message || 'Không thể nhận cuốc xe', 'error');
+    showToast(res.error?.message || 'Không thể tiếp nhận chuyến xe này', 'error');
   }
 }
 
@@ -1962,7 +1962,7 @@ function bindEvents() {
     if (passengerMap) {
       passengerMap.setView([21.0285, 105.8544], 13);
     }
-    showToast('Đã đặt lại điểm mẫu mặc định', 'info');
+    showToast('Đã đặt lại lộ trình mặc định', 'info');
   });
 
   // Booking & Trip Actions
