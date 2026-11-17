@@ -332,7 +332,18 @@ async function runBrowserTests() {
       throw new Error('Các nút chọn nhanh thành phố hoặc icon Live Distribution vẫn còn tồn tại trên thanh công cụ bản đồ');
     }
 
-    // 2. Tìm kiếm địa điểm TP.HCM qua ô tìm kiếm Google Maps để điều hướng tự do
+    // 2. Tìm kiếm địa điểm Đà Nẵng qua ô tìm kiếm Google Maps để điều hướng tự do
+    await page.fill('#input-map-search', 'Cầu Rồng');
+    await page.waitForSelector('#map-search-suggestions:not(.hidden)', { timeout: 3000 });
+    await page.click('.search-suggestion-item:first-child');
+    await page.waitForTimeout(700);
+    await page.keyboard.press('Escape');
+    const danangCenter = await page.evaluate(() => window.passengerMap.getCenter());
+    if (Math.abs(danangCenter.lat - 16.0611) > 0.1) {
+      throw new Error(`Bản đồ không điều hướng đến Đà Nẵng qua tìm kiếm: lat=${danangCenter.lat}`);
+    }
+
+    // 3. Tìm kiếm địa điểm TP.HCM qua ô tìm kiếm Google Maps để điều hướng tự do
     await page.fill('#input-map-search', 'Bến Thành');
     await page.waitForSelector('#map-search-suggestions:not(.hidden)', { timeout: 3000 });
     await page.click('.search-suggestion-item:first-child');
@@ -345,7 +356,7 @@ async function runBrowserTests() {
       throw new Error(`Bản đồ không điều hướng đến TP.HCM qua tìm kiếm: lat=${hcmCenter.lat}`);
     }
 
-    // 3. Đặt lại điểm mẫu mặc định tại Hà Nội
+    // 4. Đặt lại điểm mẫu mặc định tại Hà Nội
     await page.click('#btn-map-reset-points');
     await page.waitForTimeout(500);
     const hanoiCenter = await page.evaluate(() => window.passengerMap.getCenter());
@@ -353,7 +364,7 @@ async function runBrowserTests() {
       throw new Error(`Tâm bản đồ không trở về Hà Nội sau khi bấm Đặt Lại: lat=${hanoiCenter.lat}`);
     }
 
-    recordResult('UI-04B', 'Bản đồ tinh gọn: Đã loại bỏ các nút chọn nhanh thành phố và icon Live Distribution, điều hướng tự do qua thanh tìm kiếm', 'PASS', Date.now() - tClean, `Tâm TP.HCM lat=${hcmCenter.lat.toFixed(4)}, Tâm Hà Nội lat=${hanoiCenter.lat.toFixed(4)}`);
+    recordResult('UI-04B', 'Bản đồ tinh gọn: Đã loại bỏ các nút chọn nhanh thành phố và icon Live Distribution, điều hướng tự do qua thanh tìm kiếm', 'PASS', Date.now() - tClean, `Tâm Đà Nẵng lat=${danangCenter.lat.toFixed(4)}, Tâm TP.HCM lat=${hcmCenter.lat.toFixed(4)}, Tâm Hà Nội lat=${hanoiCenter.lat.toFixed(4)}`);
   } catch (err) {
     recordResult('UI-04B', 'Bản đồ tinh gọn và điều hướng tìm kiếm', 'FAIL', Date.now() - tClean, err.message);
   }
@@ -501,11 +512,26 @@ async function runBrowserTests() {
     const isRestored = await page.$eval('#passenger-map-wrapper', (el) => !el.classList.contains('fixed'));
     if (!isRestored) throw new Error('Bản đồ không khôi phục bố cục bình thường sau khi nhấn Escape');
 
-    // 3. Nút vị trí hiện tại (GPS)
+    // 3. Nút vị trí hiện tại (GPS) khi được cấp quyền định vị
+    await context.grantPermissions(['geolocation']);
+    await context.setGeolocation({ latitude: 21.0315, longitude: 105.8520 });
     await page.click('#btn-map-my-location');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(600);
+    const toastContent = await page.textContent('#toast-container');
+    if (!toastContent.includes('Đã định vị thành công vị trí của bạn')) {
+      throw new Error('Không hiển thị thông báo thành công khi định vị GPS được cấp quyền');
+    }
 
-    recordResult('UI-04F', 'Điều khiển bản đồ nâng cao kiểu Google Maps: Phóng to toàn màn hình (Fullscreen) và Định vị GPS', 'PASS', Date.now() - tControls);
+    // 4. Nút vị trí hiện tại (GPS) khi bị từ chối quyền định vị (Fallback an toàn)
+    await context.clearPermissions();
+    await page.click('#btn-map-my-location');
+    await page.waitForTimeout(600);
+    const toastDenied = await page.textContent('#toast-container');
+    if (!toastDenied.includes('Không thể đọc GPS') && !toastDenied.includes('Quyền bị từ chối') && !toastDenied.includes('căn giữa')) {
+      throw new Error('Hệ thống không xử lý fallback an toàn khi GPS bị từ chối quyền');
+    }
+
+    recordResult('UI-04F', 'Điều khiển bản đồ nâng cao kiểu Google Maps: Phóng to toàn màn hình (Fullscreen) và Định vị GPS (Cấp quyền & Từ chối quyền)', 'PASS', Date.now() - tControls, 'Fullscreen + Esc + GPS Success + GPS Denied Fallback OK');
   } catch (err) {
     recordResult('UI-04F', 'Điều khiển bản đồ nâng cao', 'FAIL', Date.now() - tControls, err.message);
   }
