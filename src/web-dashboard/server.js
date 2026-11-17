@@ -24,7 +24,12 @@ const server = http.createServer((req, res) => {
 
   // Health checks
   if (pathname === '/health' || pathname === '/live' || pathname === '/ready') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
     return res.end(JSON.stringify({ status: 'UP', service: 'web-dashboard' }));
   }
 
@@ -42,7 +47,10 @@ const server = http.createServer((req, res) => {
         const indexPath = path.join(PUBLIC_DIR, 'index.html');
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'Surrogate-Control': 'no-store',
         });
         return fs.createReadStream(indexPath).pipe(res);
       }
@@ -56,7 +64,10 @@ const server = http.createServer((req, res) => {
 
     res.writeHead(200, {
       'Content-Type': contentType,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Surrogate-Control': 'no-store',
     });
 
     const stream = fs.createReadStream(filePath);
