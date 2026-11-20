@@ -4,7 +4,17 @@ Hệ thống mô phỏng nền tảng gọi xe công nghệ theo kiến trúc **
 
 ---
 
-## 1. Kiến Trúc Tổng Thể
+## 1. Phân Công Trách Nhiệm Thành Viên
+
+| Thành viên | Phân hệ / Dịch vụ phụ trách chính | Đóng góp kỹ thuật cốt lõi |
+| :--- | :--- | :--- |
+| **Thành viên 1**<br>*(Nguyễn Hoàng Anh Đức - DarkBre)<br>**Trưởng nhóm** | • `Identity Service` (:8001)<br>• `Trip Booking Service` (:8003)<br>• Saga Coordinator & Dynamic Pricing | • Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.<br>• Thuật toán định giá động Dynamic Pricing Engine (Haversine GPS + Surge Multiplier).<br>• Điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ 2 chiều (Refund / Release driver).<br>• Bảo mật xác thực JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key. |
+| **Thành viên 2**<br>*(Dương Quốc Hoàng)* | • `Driver Location Service` (:8002)<br>• `Matching Service` (:8004)<br>• Driver PostgreSQL Database | • Xây dựng cơ sở dữ liệu `driver_db` và `match_db` trên PostgreSQL 17.<br>• Giao thức đặt trước tài xế Driver Reservation Protocol (`HELD`, `CONFIRMED`, `RELEASED`, `EXPIRED`).<br>• Kiểm soát tranh chấp đồng thời bằng CAS Optimistic Lock (`version`) + `FOR UPDATE SKIP LOCKED`.<br>• Thuật toán định vị và lọc tài xế theo bán kính không gian Haversine Geospatial Filter. |
+| **Thành viên 3**<br>*(Minh Quang - Quangdz1125)* | • `Payment Service` (:8005)<br>• `Notification Service` (:8006)<br>• `API Gateway` (:8080)<br>• `Web Dashboard` (:3000)<br>• Hạ tầng Docker & RabbitMQ | • Triển khai Payment Service với quản lý số dư ví, Row-Level Lock và Transactional Outbox Pattern.<br>• Thiết lập RabbitMQ 4 Topology: Topic Exchange `trip.exchange`, Dead-Letter Queue `trip.dlq`, Bounded Retries.<br>• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (`X-Correlation-ID`).<br>• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).<br>• Đóng gói Docker Compose 10 containers với healthcheck tự động. |
+
+---
+
+## 2. Kiến Trúc Tổng Thể
 
 ```text
                [ Web Simulation Dashboard (:3000) ]
@@ -56,7 +66,7 @@ Hệ thống mô phỏng nền tảng gọi xe công nghệ theo kiến trúc **
 
 ---
 
-## 2. Danh Mục Dịch Vụ và Phân Bổ Cổng
+## 3. Danh Mục Dịch Vụ và Phân Bổ Cổng
 
 | Thành phần | Dịch vụ | Cổng truy cập | Cơ sở dữ liệu | Vai trò chính |
 | :--- | :--- | :---: | :--- | :--- |
@@ -73,7 +83,7 @@ Hệ thống mô phỏng nền tảng gọi xe công nghệ theo kiến trúc **
 
 ---
 
-## 3. Yêu Cầu Môi Trường
+## 4. Yêu Cầu Môi Trường
 
 - **Docker Desktop / Docker Engine:** Hỗ trợ Docker Compose v2 trở lên.
 - **Node.js:** Phiên bản `>= 22.13.0 LTS` (khuyến nghị khi chạy các script kiểm tra và khởi tạo dữ liệu cục bộ).
@@ -81,7 +91,7 @@ Hệ thống mô phỏng nền tảng gọi xe công nghệ theo kiến trúc **
 
 ---
 
-## 4. Hướng Dẫn Cài Đặt và Khởi Chạy
+## 5. Hướng Dẫn Cài Đặt và Khởi Chạy
 
 ### Bước 1: Chuẩn bị biến môi trường
 Sao chép tệp mẫu `.env.example` thành `.env`:
@@ -114,7 +124,7 @@ Lệnh trên sẽ tự động khởi tạo các tài khoản khách, tài xế,
 
 ---
 
-## 5. Truy Cập Hệ Thống
+## 6. Truy Cập Hệ Thống
 
 Sau khi khởi chạy hoàn tất:
 - **Giao diện điều hành (Web Dashboard):** `http://localhost:3000`
@@ -133,7 +143,7 @@ Sau khi khởi chạy hoàn tất:
 
 ---
 
-## 6. Cấu Trúc Thư Mục Sản Phẩm (Production Structure)
+## 7. Cấu Trúc Thư Mục Sản Phẩm (Production Structure)
 
 ```text
 .
@@ -162,13 +172,3 @@ Sau khi khởi chạy hoàn tất:
     ├── trip-service/           # Vòng đời chuyến đi & Saga (Port 8003)
     └── web-dashboard/          # Giao diện web mô phỏng (Port 3000)
 ```
-
----
-
-## 7. Phân Công Trách Nhiệm Thành Viên
-
-| Thành viên | Phân hệ / Dịch vụ phụ trách chính | Đóng góp kỹ thuật cốt lõi |
-| :--- | :--- | :--- |
-| **Thành viên 1**<br>*(Nguyễn Hoàng Anh Đức - DarkBre)<br>**Trưởng nhóm** | • `Identity Service` (:8001)<br>• `Trip Booking Service` (:8003)<br>• Saga Coordinator & Dynamic Pricing | • Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.<br>• Thuật toán định giá động Dynamic Pricing Engine (Haversine GPS + Surge Multiplier).<br>• Điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ 2 chiều (Refund / Release driver).<br>• Bảo mật xác thực JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key. |
-| **Thành viên 2**<br>*(Dương Quốc Hoàng)* | • `Driver Location Service` (:8002)<br>• `Matching Service` (:8004)<br>• Driver PostgreSQL Database | • Xây dựng cơ sở dữ liệu `driver_db` và `match_db` trên PostgreSQL 17.<br>• Giao thức đặt trước tài xế Driver Reservation Protocol (`HELD`, `CONFIRMED`, `RELEASED`, `EXPIRED`).<br>• Kiểm soát tranh chấp đồng thời bằng CAS Optimistic Lock (`version`) + `FOR UPDATE SKIP LOCKED`.<br>• Thuật toán định vị và lọc tài xế theo bán kính không gian Haversine Geospatial Filter. |
-| **Thành viên 3**<br>*(Minh Quang - Quangdz1125)* | • `Payment Service` (:8005)<br>• `Notification Service` (:8006)<br>• `API Gateway` (:8080)<br>• `Web Dashboard` (:3000)<br>• Hạ tầng Docker & RabbitMQ | • Triển khai Payment Service với quản lý số dư ví, Row-Level Lock và Transactional Outbox Pattern.<br>• Thiết lập RabbitMQ 4 Topology: Topic Exchange `trip.exchange`, Dead-Letter Queue `trip.dlq`, Bounded Retries.<br>• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (`X-Correlation-ID`).<br>• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).<br>• Đóng gói Docker Compose 10 containers với healthcheck tự động. |
