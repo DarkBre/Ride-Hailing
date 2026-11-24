@@ -1,5 +1,14 @@
 'use strict';
 
+// =========================================================================
+// [TV1] Identity Service Routes
+// - POST /auth/register: Đăng ký tài khoản (Scrypt + Salt 16B)
+// - POST /auth/login: Đăng nhập & cấp phát JWT HS256 (24h)
+// - GET /auth/me: Lấy thông tin tài khoản hiện tại qua Bearer token
+// - POST /auth/logout: Đăng xuất & thu hồi token vào blacklist SQLite
+// - POST /internal/verify-token: API nội bộ cho Gateway xác thực vé (X-Internal-Key)
+// =========================================================================
+
 const crypto = require('node:crypto');
 const auth = require('./auth');
 const config = require('./config');
@@ -47,7 +56,7 @@ function createRoutes(db) {
       },
     },
 
-    // 2. Đăng ký tài khoản (Hỗ trợ cả /auth/register và /api/v1/auth/register)
+    // 2. [TV1] Đăng ký tài khoản: Validate, băm mật khẩu Scrypt + Salt 16B, lưu users SQLite
     ...['/auth/register', '/api/v1/auth/register'].map((path) => ({
       method: 'POST',
       path,
@@ -55,7 +64,7 @@ function createRoutes(db) {
       handler: async ({ body }) => {
         const { email, password, name, phone, role } = body || {};
 
-        // 2.1. Validate input data (ST-02)
+        // 2.1. Kiểm tra định dạng email, độ dài mật khẩu >= 6, role hợp lệ
         if (!email || typeof email !== 'string' || !EMAIL_REGEX.test(email.trim())) {
           const err = new Error('Email không đúng định dạng');
           err.status = 400;
@@ -85,7 +94,7 @@ function createRoutes(db) {
           throw err;
         }
 
-        // 2.2. Kiểm tra trùng lặp email
+        // 2.2. Kiểm tra email đã đăng ký chưa (tránh trùng lặp tài khoản)
         const existing = db.get('SELECT id FROM users WHERE email = ?;', email.trim().toLowerCase());
         if (existing) {
           const err = new Error('Email đã được đăng ký trong hệ thống');
@@ -94,7 +103,7 @@ function createRoutes(db) {
           throw err;
         }
 
-        // 2.3. Băm mật khẩu scrypt + salt và ghi DB an toàn
+        // 2.3. Băm mật khẩu Scrypt + Salt 16B và ghi vào database SQLite
         const passwordHash = auth.hashPassword(password);
         const userId = crypto.randomUUID();
         const now = new Date().toISOString();
@@ -133,7 +142,7 @@ function createRoutes(db) {
       },
     })),
 
-    // 3. Đăng nhập (Hỗ trợ /auth/login và /api/v1/auth/login)
+    // 3. [TV1] Đăng nhập: So khớp mật khẩu timingSafeEqual và cấp phát JWT HS256 (24h)
     ...['/auth/login', '/api/v1/auth/login'].map((path) => ({
       method: 'POST',
       path,
@@ -148,6 +157,7 @@ function createRoutes(db) {
           throw err;
         }
 
+        // 3.1. Tìm kiếm tài khoản người dùng theo email trong SQLite
         const user = db.get('SELECT * FROM users WHERE email = ?;', String(email).trim().toLowerCase());
         if (!user) {
           const err = new Error('Email hoặc mật khẩu không chính xác');
@@ -156,6 +166,7 @@ function createRoutes(db) {
           throw err;
         }
 
+        // 3.2. So khớp mật khẩu bằng timingSafeEqual (chống Timing Attack O(1))
         const isValid = auth.verifyPassword(String(password), user.password_hash);
         if (!isValid) {
           const err = new Error('Email hoặc mật khẩu không chính xác');
@@ -164,7 +175,7 @@ function createRoutes(db) {
           throw err;
         }
 
-        // Ký JWT Token (bao gồm cả userId, user_id, sub để tương thích mọi consumer)
+        // 3.3. Cấp phát JWT Access Token chứa payload (userId, email, role, exp 24h)
         const token = auth.signToken({
           sub: user.id,
           userId: user.id,
@@ -216,7 +227,7 @@ function createRoutes(db) {
       },
     })),
 
-    // 5. Đăng xuất / Thu hồi token (/auth/logout và /api/v1/auth/logout)
+    // 5. [TV1] Đăng xuất: Thu hồi token, lưu SHA-256 vào Persistent Blacklist SQLite
     ...['/auth/logout', '/api/v1/auth/logout'].map((path) => ({
       method: 'POST',
       path,
@@ -231,8 +242,7 @@ function createRoutes(db) {
       },
     })),
 
-    // 6. API Nội bộ: Xác thực nhanh token cho API Gateway hoặc Service khác
-    // Được bảo vệ nghiêm ngặt bằng X-Internal-Key (ST-01, Section 5.5)
+    // 6. [TV1] API Nội bộ: Xác thực nhanh JWT cho API Gateway (bảo vệ bằng X-Internal-Key)
     {
       method: 'POST',
       path: '/internal/verify-token',

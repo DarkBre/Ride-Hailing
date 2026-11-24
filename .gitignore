@@ -25,6 +25,7 @@ data/
 
 # Reference folders (Bản mẫu tham khảo, không đưa vào git)
 DS03 Build a Ride-Hailing/
+DS02_report.pdf
 *.zip
 
 # AI harnesses & tool caches

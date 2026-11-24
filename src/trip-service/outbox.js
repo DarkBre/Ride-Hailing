@@ -1,5 +1,11 @@
 'use strict';
 
+// =========================================================================
+// [TV1] Transactional Outbox Pattern (Trip Service)
+// Giải quyết bài toán Dual-Write: Lưu event vào outbox_events trong cùng DB transaction,
+// Background worker quét định kỳ để gửi lên RabbitMQ với cam kết At-least-once delivery
+// =========================================================================
+
 const crypto = require('node:crypto');
 const http = require('node:http');
 const config = require('./config');
@@ -89,15 +95,14 @@ class OutboxManager {
     this.publishHandler = handler;
   }
 
-  /**
-   * Ghi nhận sự kiện vào bảng outbox_events (Thường gọi cùng trong 1 DB Transaction)
-   */
+  // [TV1] Ghi nhận sự kiện vào outbox_events (gọi trong db.tx cùng nghiệp vụ)
   insertEvent({ aggregateType, aggregateId, eventType, payload, correlationId }) {
-    const eventId = crypto.randomUUID();
+    const eventId = crypto.randomUUID(); // Mã định danh UUID duy nhất cho từng event
     const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const corrId = normalizeCorrelationId(correlationId);
+    const corrId = normalizeCorrelationId(correlationId); // Chuẩn hoá correlation ID để trace luồng
     const now = new Date().toISOString();
 
+    // Lưu sự kiện vào bảng outbox_events với trạng thái PENDING
     this.db.run(
       `INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload, correlation_id, status, retry_count, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'PENDING', 0, ?);`,
@@ -117,9 +122,7 @@ class OutboxManager {
     };
   }
 
-  /**
-   * Quét và bắn các sự kiện đang PENDING
-   */
+  // [TV1] Quét các sự kiện PENDING, gửi lên Broker và xác nhận Publisher Acknowledgment
   async flushPending(customPublishHandler = null) {
     if (this.isFlushing) return 0;
 
@@ -131,6 +134,7 @@ class OutboxManager {
 
     this.isFlushing = true;
     try {
+      // Quét theo lô 50 sự kiện PENDING theo thứ tự tạo cũ nhất trước
       const events = this.db.all(
         `SELECT * FROM outbox_events 
          WHERE status = 'PENDING' 
@@ -152,6 +156,7 @@ class OutboxManager {
             payload = evt.payload;
           }
 
+          // Đóng gói Envelope chuẩn của hệ phân tán
           const envelope = {
             event_id: evt.id,
             correlation_id: evt.correlation_id,
@@ -162,10 +167,10 @@ class OutboxManager {
             payload,
           };
 
-          // Bắt buộc gọi handler và chờ xác nhận Publisher Acknowledgment
+          // Gửi lên Broker và chờ Publisher Acknowledgment
           await handler(envelope);
 
-          // Chỉ khi handler hoàn tất không ném lỗi mới đánh dấu PUBLISHED
+          // Nhận ACK thành công -> Đánh dấu sự kiện đã PUBLISHED
           const now = new Date().toISOString();
           this.db.run(
             `UPDATE outbox_events 
@@ -176,6 +181,7 @@ class OutboxManager {
           );
           successCount++;
         } catch (err) {
+          // Gửi thất bại -> Tăng số lần thử lại, nếu >= 5 lần chuyển sang FAILED
           const nextRetry = (evt.retry_count || 0) + 1;
           const newStatus = nextRetry >= this.maxRetries ? 'FAILED' : 'PENDING';
           this.db.run(
@@ -195,11 +201,10 @@ class OutboxManager {
     }
   }
 
-  /**
-   * Bật worker định kỳ quét outbox
-   */
+  // [TV1] Background Worker: Quét và gửi sự kiện outbox định kỳ mỗi 1000ms
   startWorker(intervalMs = 1000) {
     if (this.timer) return;
+    // Chạy vòng lặp định kỳ mỗi giây để giải phóng các sự kiện PENDING
     this.timer = setInterval(async () => {
       try {
         await this.flushPending();

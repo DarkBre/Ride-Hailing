@@ -1,5 +1,12 @@
 'use strict';
 
+// =========================================================================
+// [TV1] Cơ sở dữ liệu SQLite WAL (Trip Service)
+// - PRAGMA journal_mode = WAL: Tách biệt đọc/ghi, tăng thông lượng cho hệ thống
+// - PRAGMA busy_timeout = 5000: Đợi 5 giây khi tranh chấp lock, tránh lỗi SQLite BUSY
+// - 4 bảng phân tán: trips (idempotency), outbox_events (outbox), processed_events (consumer), saga_instances (saga)
+// =========================================================================
+
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');

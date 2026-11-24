@@ -1,13 +1,19 @@
 'use strict';
 
+// =========================================================================
+// [TV1] Phân hệ Xác thực & Bảo mật (Identity Service)
+// - Băm mật khẩu Scrypt + Salt 16B ngẫu nhiên (chống Rainbow Table / Brute-force)
+// - Xác thực mật khẩu an toàn với crypto.timingSafeEqual (chống Timing Attack O(1))
+// - Ký và giải mã JWT token chuẩn HS256 (HMAC-SHA256)
+// - Persistent Token Blacklist với SQLite (thu hồi token khi logout)
+// =========================================================================
+
 const crypto = require('node:crypto');
 const config = require('./config');
 
 const tokenBlacklist = new Set(); // Chỉ lưu token hash (SHA-256)
 
-/**
- * Băm token bằng SHA-256 trước khi lưu vào blacklist (tránh lưu raw JWT)
- */
+// [TV1] Băm SHA-256 token trước khi lưu blacklist (nguyên tắc Defense-in-Depth)
 function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -54,46 +60,40 @@ function base64UrlDecode(str) {
   return Buffer.from(str, 'base64').toString('utf8');
 }
 
-/**
- * Băm mật khẩu bằng scrypt với salt ngẫu nhiên 16 bytes
- */
+// [TV1] Băm mật khẩu bằng Scrypt + Salt 16 bytes ngẫu nhiên (chống Rainbow Table & brute-force)
 function hashPassword(password) {
   if (!password || typeof password !== 'string') {
     throw new Error('Mật khẩu không hợp lệ');
   }
-  const salt = crypto.randomBytes(16).toString('hex');
-  const derivedKey = crypto.scryptSync(password, salt, 64);
-  return `${salt}:${derivedKey.toString('hex')}`;
+  const salt = crypto.randomBytes(16).toString('hex'); // Sinh muối ngẫu nhiên 16 bytes
+  const derivedKey = crypto.scryptSync(password, salt, 64); // Thuật toán Scrypt (Memory-Hard) tạo khoá 64 bytes
+  return `${salt}:${derivedKey.toString('hex')}`; // Ghép dạng 'salt:key' để lưu trữ
 }
 
-/**
- * Kiểm tra mật khẩu đối chiếu với hash lưu trữ
- */
+// [TV1] Xác thực mật khẩu an toàn chống Timing Attack O(1) bằng crypto.timingSafeEqual
 function verifyPassword(password, storedHash) {
   if (!password || !storedHash || typeof password !== 'string' || typeof storedHash !== 'string') {
     return false;
   }
   if (!storedHash.includes(':')) return false;
 
-  const [salt, key] = storedHash.split(':');
+  const [salt, key] = storedHash.split(':'); // Tách muối salt và khoá băm cũ
   try {
-    const derivedKey = crypto.scryptSync(password, salt, 64);
+    const derivedKey = crypto.scryptSync(password, salt, 64); // Băm lại mật khẩu nhập vào với cùng muối
     const keyBuffer = Buffer.from(key, 'hex');
     if (derivedKey.length !== keyBuffer.length) return false;
-    return crypto.timingSafeEqual(derivedKey, keyBuffer);
+    return crypto.timingSafeEqual(derivedKey, keyBuffer); // So sánh hằng thời gian O(1) chống Timing Attack
   } catch (_) {
     return false;
   }
 }
 
-/**
- * Ký JWT token (HS256)
- */
+// [TV1] Ký JWT token chuẩn HS256 (HMAC-SHA256) không phụ thuộc thư viện ngoài
 function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
+  const header = { alg: 'HS256', typ: 'JWT' }; // Khai báo thuật toán HS256
+  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds; // Tính thời điểm hết hạn (thường là 24h)
   const iat = Math.floor(Date.now() / 1000);
-  const jti = crypto.randomUUID();
+  const jti = crypto.randomUUID(); // Mã định danh duy nhất cho từng token
 
   const fullPayload = {
     ...payload,
@@ -104,9 +104,10 @@ function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
     jti,
   };
 
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
+  const encodedHeader = base64UrlEncode(JSON.stringify(header)); // Mã hoá base64url Header
+  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload)); // Mã hoá base64url Payload
 
+  // Tạo chữ ký HMAC-SHA256 từ (Header + Payload) với khoá bí mật JWT_SECRET
   const signature = crypto
     .createHmac('sha256', config.JWT_SECRET)
     .update(`${encodedHeader}.${encodedPayload}`)
@@ -115,7 +116,7 @@ function signToken(payload, expiresInSeconds = config.JWT_EXPIRES_IN) {
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
 
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
+  return `${encodedHeader}.${encodedPayload}.${signature}`; // Nối chuỗi JWT 3 phần hoàn chỉnh
 }
 
 /**
@@ -195,13 +196,11 @@ function verifyToken(token, db = null, nowSeconds = Math.floor(Date.now() / 1000
   }
 }
 
-/**
- * Đưa hash của token vào danh sách đen (khi đăng xuất), lưu bền vững vào SQLite và dọn bản ghi hết hạn
- */
+// [TV1] Persistent Token Blacklist: Băm SHA-256 lưu vào SQLite khi người dùng đăng xuất
 function revokeToken(token, db = null) {
   if (token && typeof token === 'string') {
-    const tokenHash = hashToken(token);
-    tokenBlacklist.add(tokenHash);
+    const tokenHash = hashToken(token); // Băm SHA-256 để không lưu raw token lộ thông tin
+    tokenBlacklist.add(tokenHash); // Lưu cache in-memory để kiểm tra tức thì
     if (db) {
       try {
         let exp = null;
@@ -213,9 +212,9 @@ function revokeToken(token, db = null) {
           }
         } catch (_) {}
 
-        cleanupExpiredBlacklist(db);
+        cleanupExpiredBlacklist(db); // Xoá các token blacklist đã quá hạn
         db.run(
-          'INSERT OR IGNORE INTO token_blacklist (token_hash, expires_at) VALUES (?, ?);',
+          'INSERT OR IGNORE INTO token_blacklist (token_hash, expires_at) VALUES (?, ?);', // Lưu persistent vào SQLite
           tokenHash,
           exp
         );

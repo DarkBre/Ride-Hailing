@@ -60,6 +60,11 @@ function assertDriverOwnership(caller, trip, actionDesc) {
   }
 }
 
+// =========================================================================
+// [TV1] Trip Service Routes & Lifecycle State Machine
+// Quản lý các endpoint nghiệp vụ cuốc xe, xác thực Idempotency-Key SHA-256,
+// tích hợp Dynamic Pricing Engine, Transactional Outbox và vòng đời bù trừ
+// =========================================================================
 function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
   const pricingEngine = new PricingEngine();
   const driverClient = options.driverClient || createDriverClient();
@@ -159,7 +164,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
           throw createError(400, 'INVALID_DROPOFF_ADDRESS', 'Địa chỉ điểm đến không được để trống');
         }
 
-        // 2.3. Kiểm tra Idempotency Key theo phạm vi từng hành khách (passenger_id + idempotency_key)
+        // 2.3. [TV1] Idempotency-Key: Băm SHA-256 payload chống tạo cuốc xe trùng lặp khi retry mạng
         const currentPayloadHash = crypto
           .createHash('sha256')
           .update(
@@ -172,20 +177,23 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
               dropoff: dropoff_address.trim(),
             })
           )
-          .digest('hex');
+          .digest('hex'); // Băm nội dung chuyến đi để kiểm tra tính toàn vẹn
 
         const idempotencyKey = headers['idempotency-key'] ? String(headers['idempotency-key']) : null;
         if (idempotencyKey) {
+          // Tìm xem hành khách này đã gửi cuốc với key này chưa
           const existing = db.get(
             'SELECT * FROM trips WHERE passenger_id = ? AND idempotency_key = ?;',
             effectivePassengerId,
             idempotencyKey
           );
           if (existing) {
+            // Khác payload nhưng trùng key -> Lỗi xung đột
             if (existing.idempotency_payload_hash && existing.idempotency_payload_hash !== currentPayloadHash) {
               throw createError(409, 'IDEMPOTENCY_PAYLOAD_MISMATCH', 'Idempotency-Key đã được sử dụng cho một yêu cầu đặt xe khác');
             }
 
+            // Trùng payload -> Request bị retry do lag mạng, trả về kết quả cũ với duplicate = true
             return {
               id: existing.id,
               status: existing.status,
@@ -197,8 +205,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
           }
         }
 
-        // 2.4. Tính toán giá cước động (Dynamic Pricing Engine - Mục 4.4 ARCHITECTURE.md)
-        // Dùng mốc ISO-8601 UTC chính xác trong 5 phút gần nhất để khớp định dạng cột created_at
+        // 2.4. [TV1] Tính giá cước động (Dynamic Pricing Engine): Cầu 5 phút + Cung live từ Driver Service
         const fiveMinutesAgoIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const demandRow = db.get(
           `SELECT COUNT(*) as count FROM trips 
@@ -206,13 +213,13 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
            AND created_at >= ?;`,
           fiveMinutesAgoIso
         );
-        const demand = demandRow ? demandRow.count : 0;
+        const demand = demandRow ? demandRow.count : 0; // Đếm số cuốc đang chờ ghép làm chỉ số Nhu cầu (Demand)
         const liveSupply = await driverClient.fetchAvailableSupply(
           pLat,
           pLon,
           config.MATCHING_RADIUS_KM,
           correlationId
-        );
+        ); // Lấy số xe rảnh trong bán kính 5km làm Nguồn cung (Supply)
         const hasLiveSupply = liveSupply !== null && Number.isFinite(liveSupply);
         const supply = hasLiveSupply ? liveSupply : config.PRICING_FALLBACK_SUPPLY;
         const pricingSource = hasLiveSupply ? 'DRIVER_SERVICE_LIVE' : 'OFFLINE_FALLBACK';
@@ -224,11 +231,12 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
           supply,
         });
 
-        // 2.5. Lưu dữ liệu cuốc xe nguyên tử và kích hoạt Saga (Transactional Outbox)
+        // 2.5. [TV1] Transactional Outbox: Lưu Trip và kích hoạt Saga nguyên tử trong cùng DB transaction (db.tx)
         const tripId = crypto.randomUUID();
         const now = new Date().toISOString();
 
         db.tx(() => {
+          // Ghi dữ liệu chuyến đi mới vào bảng trips
           db.run(
             `INSERT INTO trips (
               id, passenger_id, driver_id, pickup_latitude, pickup_longitude, pickup_address,
@@ -252,6 +260,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
             now
           );
 
+          // Khởi tạo Saga Instance và bắn sự kiện trip.event.created vào outbox trong cùng transaction
           sagaCoordinator.startSaga({
             tripId,
             passengerId: effectivePassengerId,
@@ -349,7 +358,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
       },
     })),
 
-    // 4. Tài xế nhận cuốc xe (POST /trips/:id/accept)
+    // 4. [TV1] Tài xế nhận cuốc (POST /trips/:id/accept): Chuyển DRIVER_ASSIGNED/CONFIRMED -> ACCEPTED
     ...['/trips/:id/accept', '/api/v1/trips/:id/accept'].map((path) => ({
       method: 'POST',
       path,
@@ -401,7 +410,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
       },
     })),
 
-    // 5. Bắt đầu chuyến đi (POST /trips/:id/start)
+    // 5. [TV1] Bắt đầu chuyến đi (POST /trips/:id/start): Chuyển ACCEPTED -> IN_PROGRESS
     ...['/trips/:id/start', '/api/v1/trips/:id/start'].map((path) => ({
       method: 'POST',
       path,
@@ -429,7 +438,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
       },
     })),
 
-    // 6. Hoàn tất chuyến đi (POST /trips/:id/complete)
+    // 6. [TV1] Hoàn tất chuyến đi (POST /trips/:id/complete): Ghi COMPLETED, phát event trừ tiền & nhả tài xế
     ...['/trips/:id/complete', '/api/v1/trips/:id/complete'].map((path) => ({
       method: 'POST',
       path,
@@ -501,7 +510,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
       },
     })),
 
-    // 7. Huỷ chuyến đi (POST /trips/:id/cancel)
+    // 7. [TV1] Huỷ chuyến đi (POST /trips/:id/cancel): Ghi CANCELLED và kích hoạt bù trừ 2 chiều
     ...['/trips/:id/cancel', '/api/v1/trips/:id/cancel'].map((path) => ({
       method: 'POST',
       path,
@@ -546,7 +555,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
 
           let hasCompensation = false;
 
-          // Nếu đã gán tài xế, phát lệnh bù trừ giải phóng tài xế
+          // Bù trừ chiều 1: Nếu đã gán tài xế, phát sự kiện giải phóng tài xế về AVAILABLE
           if (trip.driver_id) {
             hasCompensation = true;
             outboxManager.insertEvent({
@@ -563,7 +572,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
             });
           }
 
-          // Nếu chuyến đi đã được CONFIRMED trở đi (tiền đã bị tạm giữ), phát lệnh bù trừ giải phóng tiền
+          // Bù trừ chiều 2: Nếu tiền đã bị giữ (từ CONFIRMED trở đi), phát sự kiện hoàn trả tiền ví
           if (['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'].includes(trip.status)) {
             hasCompensation = true;
             outboxManager.insertEvent({
@@ -580,8 +589,7 @@ function createRoutes(db, sagaCoordinator, outboxManager, options = {}) {
             });
           }
 
-          // Đồng bộ trạng thái Saga Instance nguyên tử trong cùng transaction
-          // Chỉ chuyển COMPENSATING khi cần bù trừ (chờ xác nhận từ Payment/Driver), không tự chuyển COMPENSATED sớm
+          // Cập nhật trạng thái Saga sang COMPENSATING chờ hoàn tất bù trừ nguyên tử trong cùng transaction
           const sagaStatus = hasCompensation ? SAGA_STATUS.COMPENSATING : SAGA_STATUS.FAILED;
           const currentStep = hasCompensation ? 'COMPENSATION_AWAITING_PAYMENT_REFUND' : 'TRIP_CANCELLED_BEFORE_MATCH';
 

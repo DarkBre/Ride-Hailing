@@ -1,5 +1,12 @@
 'use strict';
 
+// =========================================================================
+// [TV1] Cơ sở dữ liệu SQLite WAL (Identity Service)
+// - PRAGMA journal_mode = WAL: Tách biệt đọc/ghi, tăng thông lượng xử lý đồng thời
+// - PRAGMA busy_timeout = 5000: Đợi 5 giây khi tranh chấp lock, tránh lỗi SQLite BUSY
+// - Bảng users (PASSENGER/DRIVER) & bảng token_blacklist (lưu hash SHA-256)
+// =========================================================================
+
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');

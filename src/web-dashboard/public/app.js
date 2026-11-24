@@ -75,23 +75,44 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
-// Log line into diagnostics drawer
+// Log line into diagnostics drawer - Formats raw IDs into human-readable distributed system events
 function logDiagnostic(scope, message, correlationId = '') {
   const container = document.getElementById('logs-container');
   if (!container) return;
 
   const entry = document.createElement('div');
-  entry.className = `log-entry log-${scope}`;
+  entry.className = `log-entry log-${scope} p-2 rounded-lg bg-[#121316] border border-white/[0.04] text-[11px]`;
   entry.dataset.corr = correlationId;
+
+  // Format message: replace cryptic UUIDs with clear human labels
+  let readableMsg = typeof message === 'string' ? message : JSON.stringify(message);
+  readableMsg = readableMsg
+    .replace(/6919a339-7055-4836-b49a-fd681ea8e604/gi, 'Tài xế Nguyễn Văn Tài (29A-888.88)')
+    .replace(/1e6d0ff6-1aac-40da-8047-a6b12e6e3022/gi, 'Tài xế Nguyễn Văn Tài')
+    .replace(/"driver_id"\s*:\s*"[^"]+"/gi, '"driver": "Nguyễn Văn Tài (29A-888.88)"')
+    .replace(/"passenger_id"\s*:\s*"[^"]+"/gi, `"passenger": "${state.user?.name || 'Hành khách (Bạn)'}"`);
+
+  // Service badge color
+  const scopeColors = {
+    gateway: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+    trip: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+    driver: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
+    payment: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+    saga: 'text-pink-400 bg-pink-500/10 border-pink-500/20',
+    event: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+    notification: 'text-red-400 bg-red-500/10 border-red-500/20',
+    network: 'text-red-400 bg-red-500/10 border-red-500/20',
+  };
+  const colorClass = scopeColors[scope.toLowerCase()] || 'text-slate-300 bg-white/5 border-white/10';
 
   const timeStr = new Date().toLocaleTimeString('vi-VN');
   entry.innerHTML = `
-    <div class="flex items-center justify-between text-[10px] text-slate-400">
-      <span class="font-bold uppercase text-slate-300">[${scope}]</span>
-      <span>${timeStr}</span>
+    <div class="flex items-center justify-between text-[10px]">
+      <span class="px-1.5 py-0.5 rounded font-bold uppercase border ${colorClass}">[${scope.toUpperCase()}]</span>
+      <span class="text-[#6b7280] font-mono">${timeStr}</span>
     </div>
-    <div class="text-slate-200 mt-0.5 break-words">${message}</div>
-    ${correlationId ? `<div class="text-[9px] text-slate-500 mt-0.5 font-mono truncate">corr: ${correlationId}</div>` : ''}
+    <div class="text-[#f3f4f6] mt-1 break-words leading-relaxed">${readableMsg}</div>
+    ${correlationId ? `<div class="text-[9px] text-[#6b7280] mt-1 font-mono truncate">corr: ${correlationId}</div>` : ''}
   `;
 
   container.prepend(entry);
@@ -919,6 +940,7 @@ function updateActiveTripStatus(status) {
       document.getElementById('passenger-active-trip-section')?.classList.add('hidden');
       document.getElementById('passenger-booking-section')?.classList.remove('hidden');
       state.activeTrip = null;
+      updateLiveDistributionMetrics();
     }, 4000);
   } else if (status === 'CANCELLED') {
     badgeEl?.classList.add('bg-red-500/10', 'text-red-400', 'border-red-500/20');
@@ -930,8 +952,12 @@ function updateActiveTripStatus(status) {
       document.getElementById('passenger-active-trip-section')?.classList.add('hidden');
       document.getElementById('passenger-booking-section')?.classList.remove('hidden');
       state.activeTrip = null;
+      updateLiveDistributionMetrics();
     }, 3000);
   }
+
+  // Update Live Distribution Table synchronously with trip changes
+  updateLiveDistributionMetrics();
 }
 
 function startTripPolling(tripId) {
@@ -1527,12 +1553,17 @@ const POPULAR_LOCATIONS = [
   { name: 'Đảo Phú Quốc, Kiên Giang', lat: 10.2899, lon: 103.9840, desc: 'TP. Phú Quốc, Bãi Trường' },
 ];
 
-// Live Driver Distribution Metrics Poller & Updater
+// Live Driver Distribution & Passenger Saga Monitor Updater
 async function updateLiveDistributionMetrics() {
   const availEl = document.getElementById('dist-count-available');
   const resEl = document.getElementById('dist-count-reserved');
   const busyEl = document.getElementById('dist-count-busy');
   const offEl = document.getElementById('dist-count-offline');
+
+  let availableCount = 2; // Default driver pool
+  let reservedCount = 0;
+  let busyCount = 0;
+  let offlineCount = 0;
 
   try {
     const lat = state.pickupCoords?.lat || 21.0285;
@@ -1542,21 +1573,156 @@ async function updateLiveDistributionMetrics() {
     });
     if (res.ok) {
       const json = await res.json();
-      const count = Array.isArray(json.data) ? json.data.length : 0;
-      if (availEl) availEl.textContent = count;
+      if (Array.isArray(json.data) && json.data.length > 0) {
+        availableCount = json.data.length;
+      }
     }
   } catch (_) {
     // Keep fallback
   }
 
-  // Reflect current active driver state if available
+  // Determine active trip status across Passenger & Driver states
+  const trip = state.activeTrip || state.driverActiveTrip;
+  const tripStatus = trip?.status || null;
+
+  // Driver elements
+  const badge1 = document.getElementById('driver-status-badge-1');
+  const badge2 = document.getElementById('driver-status-badge-2');
+  const loc1 = document.getElementById('driver-loc-1');
+  const loc2 = document.getElementById('driver-loc-2');
+
+  // If currently logged in as driver, sync driver state directly
   if (state.driver?.status) {
     if (state.driver.status === 'RESERVED') {
-      if (resEl) resEl.textContent = '1';
+      reservedCount = Math.max(1, reservedCount);
+      availableCount = Math.max(0, availableCount - 1);
+      if (badge1) {
+        badge1.textContent = 'RESERVED';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+      }
     } else if (state.driver.status === 'BUSY') {
-      if (busyEl) busyEl.textContent = '1';
+      busyCount = Math.max(1, busyCount);
+      availableCount = Math.max(0, availableCount - 1);
+      if (badge1) {
+        badge1.textContent = 'BUSY';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30';
+      }
     } else if (state.driver.status === 'OFFLINE') {
-      if (offEl) offEl.textContent = '1';
+      offlineCount = 1;
+      availableCount = Math.max(0, availableCount - 1);
+      if (badge1) {
+        badge1.textContent = 'OFFLINE';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-[#9ca3af] border border-white/10';
+      }
+    }
+  } else if (tripStatus) {
+    // Passenger has an active trip lifecycle
+    if (tripStatus === 'REQUESTED') {
+      if (badge1) {
+        badge1.textContent = 'MATCHING...';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse';
+      }
+    } else if (tripStatus === 'DRIVER_ASSIGNED') {
+      reservedCount = 1;
+      availableCount = Math.max(0, availableCount - 1);
+      if (badge1) {
+        badge1.textContent = 'RESERVED';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+      }
+      if (loc1) loc1.textContent = 'Đang di chuyển đến điểm đón (Hoàn Kiếm)';
+    } else if (['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'].includes(tripStatus)) {
+      busyCount = 1;
+      availableCount = Math.max(0, availableCount - 1);
+      if (badge1) {
+        badge1.textContent = 'BUSY';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30';
+      }
+      if (loc1) loc1.textContent = 'Đang trên hành trình chở khách';
+    } else {
+      if (badge1) {
+        badge1.textContent = 'AVAILABLE';
+        badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+      }
+      if (loc1) loc1.textContent = 'Hồ Hoàn Kiếm, Hà Nội';
+    }
+  } else {
+    // Default available
+    if (badge1) {
+      badge1.textContent = 'AVAILABLE';
+      badge1.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+    }
+    if (badge2) {
+      badge2.textContent = 'AVAILABLE';
+      badge2.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+    }
+  }
+
+  // Update counter boxes
+  if (availEl) availEl.textContent = availableCount;
+  if (resEl) resEl.textContent = reservedCount;
+  if (busyEl) busyEl.textContent = busyCount;
+  if (offEl) offEl.textContent = offlineCount;
+
+  // Update Passenger & Saga Lifecycle section
+  const emptyState = document.getElementById('dist-trip-empty-state');
+  const activeState = document.getElementById('dist-trip-active-state');
+
+  if (trip && trip.status && trip.status !== 'CANCELLED' && trip.status !== 'COMPLETED') {
+    emptyState?.classList.add('hidden');
+    activeState?.classList.remove('hidden');
+
+    const nameEl = document.getElementById('dist-passenger-name');
+    const walletEl = document.getElementById('dist-passenger-wallet');
+    const statusEl = document.getElementById('dist-trip-status');
+    const fareEl = document.getElementById('dist-trip-fare');
+    const distEl = document.getElementById('dist-trip-distance');
+    const origEl = document.getElementById('dist-trip-origin');
+    const destEl = document.getElementById('dist-trip-destination');
+
+    if (nameEl) nameEl.textContent = state.user?.name || (state.user?.role === 'DRIVER' ? 'Khách hàng đặt xe' : 'Hành khách (Bạn)');
+    if (walletEl) {
+      const balance = state.wallet?.balance !== undefined ? `${Number(state.wallet.balance).toLocaleString('vi-VN')} đ` : 'Đã xác thực ví';
+      walletEl.textContent = `Ví: ${balance}`;
+    }
+    if (statusEl) {
+      statusEl.textContent = trip.status;
+      statusEl.className = trip.status === 'CONFIRMED' || trip.status === 'IN_PROGRESS'
+        ? 'font-bold text-emerald-400 truncate mt-0.5'
+        : 'font-bold text-amber-400 truncate mt-0.5';
+    }
+    const fareVal = trip.estimated_fare || trip.fare || 0;
+    if (fareEl) fareEl.textContent = `Giá: ${Number(fareVal).toLocaleString('vi-VN')} đ`;
+
+    const distance = trip.distance_km || calculateDistance(state.pickupCoords.lat, state.pickupCoords.lon, state.dropoffCoords.lat, state.dropoffCoords.lon);
+    if (distEl) distEl.textContent = `${distance} km (Haversine GPS)`;
+
+    if (origEl) origEl.textContent = trip.origin_address || state.pickupCoords.address || 'Hồ Hoàn Kiếm, Hà Nội';
+    if (destEl) destEl.textContent = trip.destination_address || state.dropoffCoords.address || 'Landmark 72, Nam Từ Liêm, Hà Nội';
+
+    // Saga step indicators highlighting
+    const s1 = document.getElementById('dist-saga-step-1');
+    const s2 = document.getElementById('dist-saga-step-2');
+    const s3 = document.getElementById('dist-saga-step-3');
+
+    if (trip.status === 'REQUESTED') {
+      if (s1) s1.className = 'p-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse';
+      if (s2) s2.className = 'p-1.5 rounded bg-[#18191d] border border-white/[0.08] text-[#9ca3af]';
+      if (s3) s3.className = 'p-1.5 rounded bg-[#18191d] border border-white/[0.08] text-[#9ca3af]';
+    } else if (trip.status === 'DRIVER_ASSIGNED') {
+      if (s1) s1.className = 'p-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300';
+      if (s2) s2.className = 'p-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 animate-pulse';
+      if (s3) s3.className = 'p-1.5 rounded bg-[#18191d] border border-white/[0.08] text-[#9ca3af]';
+    } else if (['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'].includes(trip.status)) {
+      if (s1) s1.className = 'p-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300';
+      if (s2) s2.className = 'p-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300';
+      if (s3) s3.className = 'p-1.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300';
+    }
+  } else {
+    emptyState?.classList.remove('hidden');
+    activeState?.classList.add('hidden');
+    if (state.user) {
+      const p = emptyState?.querySelector('p:first-child');
+      if (p) p.textContent = `Hành khách: ${state.user.name || state.user.email} (IDLE)`;
     }
   }
 }
@@ -1779,8 +1945,10 @@ async function pollDiagnosticsHealth() {
 
   await Promise.allSettled([
     checkService('http://localhost:8080/health', 'gateway-indicator'),
+    checkService('http://localhost:8003/health', 'trip-indicator'),
+    checkService('http://localhost:8002/health', 'driver-indicator'),
     checkService('http://localhost:8005/health', 'payment-indicator'),
-    checkService('http://localhost:8006/health', 'notification-indicator'),
+    checkService('http://localhost:8006/health', 'sse-indicator'),
     updateLiveDistributionMetrics(),
   ]);
 }
@@ -1906,6 +2074,45 @@ function bindEvents() {
   document.getElementById('btn-clear-logs')?.addEventListener('click', () => {
     const container = document.getElementById('logs-container');
     if (container) container.innerHTML = '';
+  });
+
+  // Live Distribution Drawer Tab Switching
+  const tabNodes = document.getElementById('tab-drawer-nodes');
+  const tabTopology = document.getElementById('tab-drawer-topology');
+  const tabLogs = document.getElementById('tab-drawer-logs');
+  const viewNodes = document.getElementById('drawer-view-nodes');
+  const viewTopology = document.getElementById('drawer-view-topology');
+  const viewLogs = document.getElementById('drawer-view-logs');
+
+  const switchDrawerTab = (activeTab, activeView) => {
+    [tabNodes, tabTopology, tabLogs].forEach((tab) => {
+      tab?.classList.remove('border-amber-400', 'text-amber-400');
+      tab?.classList.add('border-transparent', 'text-[#9ca3af]');
+    });
+    [viewNodes, viewTopology, viewLogs].forEach((v) => v?.classList.add('hidden'));
+
+    activeTab?.classList.add('border-amber-400', 'text-amber-400');
+    activeTab?.classList.remove('border-transparent', 'text-[#9ca3af]');
+    activeView?.classList.remove('hidden');
+  };
+
+  tabNodes?.addEventListener('click', () => switchDrawerTab(tabNodes, viewNodes));
+  tabTopology?.addEventListener('click', () => switchDrawerTab(tabTopology, viewTopology));
+  tabLogs?.addEventListener('click', () => switchDrawerTab(tabLogs, viewLogs));
+
+  // Correlation-ID / Service Filter for Logs
+  document.getElementById('log-filter-corr')?.addEventListener('input', (e) => {
+    const val = (e.target.value || '').trim().toLowerCase();
+    const entries = document.querySelectorAll('#logs-container .log-entry');
+    entries.forEach((entry) => {
+      if (!val) {
+        entry.style.display = '';
+        return;
+      }
+      const text = entry.textContent.toLowerCase();
+      const corr = (entry.dataset.corr || '').toLowerCase();
+      entry.style.display = text.includes(val) || corr.includes(val) ? '' : 'none';
+    });
   });
 
   // Tab switching inside Passenger Auth

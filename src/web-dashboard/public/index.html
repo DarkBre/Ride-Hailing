@@ -759,77 +759,254 @@
   <div id="diagnostics-backdrop" class="hidden fixed inset-0 bg-[#121316]/60 backdrop-blur-[2px] z-[1090] transition-opacity"></div>
 
   <!-- Off-Canvas Diagnostics & Live Distribution Drawer -->
-  <aside id="diagnostics-drawer" class="hidden fixed inset-y-0 right-0 w-full sm:w-[480px] bg-[#18191d] border-l border-white/[0.08] z-[1100] flex flex-col shadow-2xl">
-    <div class="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between bg-[#141519]">
+  <aside id="diagnostics-drawer" class="hidden fixed inset-y-0 right-0 w-full sm:w-[580px] bg-[#16171a] border-l border-white/[0.08] z-[1100] flex flex-col shadow-2xl overflow-hidden">
+    <!-- Drawer Header -->
+    <div class="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between bg-[#121316]">
       <div class="flex items-center space-x-2">
-        <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <span class="text-xs font-semibold text-[#f3f4f6] uppercase tracking-wider">Bảng Giám Sát Phân Bổ & Trạng Thái Dịch Vụ</span>
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-xs font-bold text-[#f3f4f6] uppercase tracking-wider">Hệ Thống Phân Tán — Giám Sát Trực Tiếp</span>
       </div>
-      <button id="btn-close-diagnostics" class="p-1 rounded-md text-[#9ca3af] hover:text-white" title="Đóng bảng">✕</button>
+      <button id="btn-close-diagnostics" class="p-1.5 rounded-lg text-[#9ca3af] hover:text-white hover:bg-white/[0.06] transition" title="Đóng bảng">✕</button>
     </div>
 
-    <!-- Health Indicators Bar -->
-    <div class="px-4 py-2 bg-[#141519]/60 border-b border-white/[0.08] flex items-center justify-between text-[11px] font-mono">
-      <div class="flex items-center space-x-1.5">
+    <!-- Health Indicators Bar (Microservices Mesh) -->
+    <div class="px-4 py-2 bg-[#121316]/80 border-b border-white/[0.08] grid grid-cols-5 gap-1 text-[10px] font-mono">
+      <div class="flex items-center space-x-1.5 bg-[#18191d] px-1.5 py-1 rounded border border-white/[0.04]">
         <span id="gateway-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
-        <span class="text-[#9ca3af]">Gateway :8080</span>
+        <span class="text-[#9ca3af] truncate">GW:8080</span>
       </div>
-      <div class="flex items-center space-x-1.5">
+      <div class="flex items-center space-x-1.5 bg-[#18191d] px-1.5 py-1 rounded border border-white/[0.04]">
+        <span id="trip-indicator" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span class="text-emerald-400 font-semibold truncate">Trip:8003</span>
+      </div>
+      <div class="flex items-center space-x-1.5 bg-[#18191d] px-1.5 py-1 rounded border border-white/[0.04]">
+        <span id="driver-indicator" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span class="text-[#9ca3af] truncate">Drv:8002</span>
+      </div>
+      <div class="flex items-center space-x-1.5 bg-[#18191d] px-1.5 py-1 rounded border border-white/[0.04]">
         <span id="payment-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
-        <span class="text-[#9ca3af]">Payment :8005</span>
+        <span class="text-[#9ca3af] truncate">Pay:8005</span>
       </div>
-      <div class="flex items-center space-x-1.5">
-        <span id="notification-indicator" class="w-2 h-2 rounded-full bg-amber-500"></span>
-        <span class="text-[#9ca3af]">Notif :8006</span>
-      </div>
-      <div class="flex items-center space-x-1.5">
+      <div class="flex items-center space-x-1.5 bg-[#18191d] px-1.5 py-1 rounded border border-white/[0.04]">
         <span id="sse-indicator" class="w-2 h-2 rounded-full bg-red-500"></span>
-        <span class="text-[#9ca3af]">SSE</span>
+        <span class="text-[#9ca3af] truncate">SSE:8006</span>
       </div>
     </div>
 
-    <!-- Live Driver Distribution & Supply Metrics -->
-    <div class="px-4 py-2.5 bg-[#141519]/80 border-b border-white/[0.08] text-xs">
-      <div class="flex items-center justify-between mb-1.5">
-        <span class="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wider">Phân Bổ Tài Xế Trực Tiếp</span>
-        <span class="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          Đang hoạt động
-        </span>
+    <!-- Navigation Tabs inside Drawer -->
+    <div class="flex border-b border-white/[0.08] bg-[#121316] text-xs font-medium">
+      <button id="tab-drawer-nodes" class="flex-1 py-2.5 px-3 text-center border-b-2 border-amber-400 text-amber-400 flex items-center justify-center gap-1.5 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+        <span>Tài Xế & Khách Hàng</span>
+      </button>
+      <button id="tab-drawer-topology" class="flex-1 py-2.5 px-3 text-center border-b-2 border-transparent text-[#9ca3af] hover:text-[#f3f4f6] flex items-center justify-center gap-1.5 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+        <span>Kiến Trúc Saga</span>
+      </button>
+      <button id="tab-drawer-logs" class="flex-1 py-2.5 px-3 text-center border-b-2 border-transparent text-[#9ca3af] hover:text-[#f3f4f6] flex items-center justify-center gap-1.5 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        <span>Nhật Ký Sự Kiện</span>
+      </button>
+    </div>
+
+    <!-- VIEW 1: TRẠNG THÁI TÀI XẾ & KHÁCH HÀNG (DISTRIBUTED LIVE STATE) -->
+    <div id="drawer-view-nodes" class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+      <!-- Section A: Khách Hàng & Vòng Đời Cuốc Xe -->
+      <div class="bg-[#18191d] rounded-xl border border-white/[0.08] p-3.5 space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+            <span class="font-semibold text-white uppercase tracking-wider text-[11px]">Trạng Thái Khách Hàng & Cuốc Xe</span>
+          </div>
+          <span id="dist-passenger-node-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">Trip-Service :8001</span>
+        </div>
+
+        <!-- Info Passenger & Trip -->
+        <div id="dist-trip-empty-state" class="py-3 text-center text-[#9ca3af] space-y-1">
+          <p class="text-xs">Chưa có cuốc xe nào đang diễn ra.</p>
+          <p class="text-[10px] text-[#6b7280]">Khách hàng ở trạng thái <span class="text-emerald-400 font-medium">IDLE</span> (Sẵn sàng tạo yêu cầu chuyến).</p>
+        </div>
+
+        <div id="dist-trip-active-state" class="hidden space-y-3">
+          <div class="grid grid-cols-2 gap-2 text-[11px]">
+            <div class="bg-[#121316] p-2.5 rounded-lg border border-white/[0.04]">
+              <div class="text-[10px] text-[#9ca3af] uppercase">Khách Hàng</div>
+              <div id="dist-passenger-name" class="font-bold text-white truncate mt-0.5">Nguyễn Văn A</div>
+              <div id="dist-passenger-wallet" class="text-[10px] text-emerald-400 font-mono mt-0.5">Ví: 300.000 đ</div>
+            </div>
+            <div class="bg-[#121316] p-2.5 rounded-lg border border-white/[0.04]">
+              <div class="text-[10px] text-[#9ca3af] uppercase">Trạng Thái Cuốc Xe</div>
+              <div id="dist-trip-status" class="font-bold text-amber-400 truncate mt-0.5">REQUESTED</div>
+              <div id="dist-trip-fare" class="text-[10px] text-sky-400 font-mono mt-0.5">Giá: 25.000 đ</div>
+            </div>
+          </div>
+
+          <!-- Lộ trình cuốc xe -->
+          <div class="bg-[#121316] p-2.5 rounded-lg border border-white/[0.04] space-y-1.5 text-[11px]">
+            <div class="flex items-center justify-between text-[10px] text-[#9ca3af]">
+              <span>Lộ Trình Chuyến Đi</span>
+              <span id="dist-trip-distance" class="text-amber-400 font-mono font-bold">4.2 km (Haversine)</span>
+            </div>
+            <div class="flex items-start space-x-2">
+              <span class="text-emerald-400 mt-0.5">●</span>
+              <span id="dist-trip-origin" class="text-[#f3f4f6] truncate text-[11px]">Hồ Hoàn Kiếm, Hoàn Kiếm, Hà Nội</span>
+            </div>
+            <div class="flex items-start space-x-2">
+              <span class="text-red-400 mt-0.5">■</span>
+              <span id="dist-trip-destination" class="text-[#f3f4f6] truncate text-[11px]">Landmark 72, Nam Từ Liêm, Hà Nội</span>
+            </div>
+          </div>
+
+          <!-- Tiến trình Saga Coordinator phân tán -->
+          <div class="bg-[#121316] p-2.5 rounded-lg border border-white/[0.04] space-y-2">
+            <div class="flex items-center justify-between text-[10px]">
+              <span class="font-bold text-amber-400 uppercase tracking-wider">Tiến Trình Saga Coordinator Phân Tán</span>
+              <span id="dist-saga-status-badge" class="text-emerald-400 font-mono">Bù trừ 2 chiều tự động</span>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5 text-center text-[10px] font-mono">
+              <div id="dist-saga-step-1" class="p-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                <div class="font-bold">1. Ghép Tài Xế</div>
+                <div class="text-[9px] text-[#9ca3af]">Driver-Service</div>
+              </div>
+              <div id="dist-saga-step-2" class="p-1.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                <div class="font-bold">2. Giữ Tiền Ví</div>
+                <div class="text-[9px] text-[#9ca3af]">Payment-Service</div>
+              </div>
+              <div id="dist-saga-step-3" class="p-1.5 rounded bg-[#18191d] border border-white/[0.08] text-[#9ca3af]">
+                <div class="font-bold">3. Xác Nhận</div>
+                <div class="text-[9px] text-[#9ca3af]">Outbox Event</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="grid grid-cols-4 gap-2 text-center text-[11px] font-mono">
-        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
-          <div class="text-emerald-400 font-bold tabular-nums" id="dist-count-available">2</div>
-          <div class="text-[9px] text-[#9ca3af]">AVAILABLE</div>
+
+      <!-- Section B: Phân Bổ Trực Tiếp Đội Tài Xế -->
+      <div class="bg-[#18191d] rounded-xl border border-white/[0.08] p-3.5 space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="font-semibold text-white uppercase tracking-wider text-[11px]">Phân Bổ Tài Xế Theo Trạng Thái</span>
+          </div>
+          <span class="text-[10px] font-mono text-[#9ca3af]">Driver-Service :8002</span>
         </div>
-        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
-          <div class="text-amber-400 font-bold tabular-nums" id="dist-count-reserved">0</div>
-          <div class="text-[9px] text-[#9ca3af]">RESERVED</div>
+
+        <!-- 4 Count Boxes -->
+        <div class="grid grid-cols-4 gap-2 text-center text-[11px] font-mono">
+          <div class="bg-[#121316] p-2 rounded-lg border border-emerald-500/20">
+            <div class="text-emerald-400 font-bold tabular-nums text-sm" id="dist-count-available">2</div>
+            <div class="text-[9px] text-[#9ca3af] mt-0.5">AVAILABLE</div>
+          </div>
+          <div class="bg-[#121316] p-2 rounded-lg border border-amber-500/20">
+            <div class="text-amber-400 font-bold tabular-nums text-sm" id="dist-count-reserved">0</div>
+            <div class="text-[9px] text-[#9ca3af] mt-0.5">RESERVED</div>
+          </div>
+          <div class="bg-[#121316] p-2 rounded-lg border border-sky-500/20">
+            <div class="text-sky-400 font-bold tabular-nums text-sm" id="dist-count-busy">0</div>
+            <div class="text-[9px] text-[#9ca3af] mt-0.5">BUSY</div>
+          </div>
+          <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.04]">
+            <div class="text-[#9ca3af] font-bold tabular-nums text-sm" id="dist-count-offline">0</div>
+            <div class="text-[9px] text-[#9ca3af] mt-0.5">OFFLINE</div>
+          </div>
         </div>
-        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
-          <div class="text-sky-400 font-bold tabular-nums" id="dist-count-busy">0</div>
-          <div class="text-[9px] text-[#9ca3af]">BUSY</div>
+
+        <!-- Live Driver Cards List -->
+        <div class="space-y-2 mt-2">
+          <div class="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wider">Danh Sách Tài Xế Trong Cụm Phân Tán</div>
+          
+          <!-- Driver Card 1 -->
+          <div id="driver-card-1" class="bg-[#121316] p-3 rounded-lg border border-white/[0.06] hover:border-emerald-500/30 transition space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">T1</div>
+                <div>
+                  <div class="font-bold text-[#f3f4f6]">Nguyễn Văn Tài</div>
+                  <div class="text-[10px] text-[#9ca3af]">Toyota Vios • <span class="font-mono text-white">29A-888.88</span></div>
+                </div>
+              </div>
+              <span id="driver-status-badge-1" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">AVAILABLE</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-[#9ca3af] pt-1 border-t border-white/[0.04]">
+              <span class="flex items-center gap-1">📍 <span id="driver-loc-1">Hồ Hoàn Kiếm, Hà Nội</span></span>
+              <span class="font-mono text-emerald-400">Node :8002</span>
+            </div>
+          </div>
+
+          <!-- Driver Card 2 -->
+          <div id="driver-card-2" class="bg-[#121316] p-3 rounded-lg border border-white/[0.06] hover:border-emerald-500/30 transition space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <div class="w-7 h-7 rounded-full bg-sky-500/10 text-sky-400 flex items-center justify-center font-bold text-xs">T2</div>
+                <div>
+                  <div class="font-bold text-[#f3f4f6]">Lê Văn Lái</div>
+                  <div class="text-[10px] text-[#9ca3af]">Hyundai Accent • <span class="font-mono text-white">29A-999.99</span></div>
+                </div>
+              </div>
+              <span id="driver-status-badge-2" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">AVAILABLE</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px] text-[#9ca3af] pt-1 border-t border-white/[0.04]">
+              <span class="flex items-center gap-1">📍 <span id="driver-loc-2">Tây Hồ, Hà Nội</span></span>
+              <span class="font-mono text-emerald-400">Node :8002</span>
+            </div>
+          </div>
         </div>
-        <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.08]">
-          <div class="text-[#9ca3af] font-bold tabular-nums" id="dist-count-offline">0</div>
-          <div class="text-[9px] text-[#9ca3af]">OFFLINE</div>
-        </div>
-      </div>
-      <div class="mt-2 text-[10px] text-[#9ca3af] flex items-center justify-between">
-        <span>Khu vực: Toàn quốc (Hà Nội, Đà Nẵng, TP.HCM)</span>
-        <span class="text-[#6b7280]">Radius: 5km</span>
       </div>
     </div>
 
-    <!-- Filter input -->
-    <div class="p-3 border-b border-white/[0.08] flex gap-2">
-      <input id="log-filter-corr" type="text" placeholder="Lọc theo Correlation-ID..." class="flex-1 bg-[#121316] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus:outline-none font-mono" />
-      <button id="btn-clear-logs" class="bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs px-2.5 py-1.5 rounded-lg border border-white/[0.08] transition">Xóa Nhật Ký</button>
+    <!-- VIEW 2: KIẾN TRÚC PHÂN TÁN & SAGA CHOREOGRAPHY -->
+    <div id="drawer-view-topology" class="hidden flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+      <div class="bg-[#18191d] rounded-xl border border-white/[0.08] p-3.5 space-y-3">
+        <div class="flex items-center space-x-2 pb-2 border-b border-white/[0.06]">
+          <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+          <span class="font-semibold text-white uppercase tracking-wider text-[11px]">Sơ Đồ Tương Tác Giữa Các Vi Dịch Vụ</span>
+        </div>
+        
+        <!-- Topology diagram card -->
+        <div class="bg-[#121316] p-3 rounded-lg border border-white/[0.04] font-mono text-[11px] space-y-2 leading-relaxed">
+          <div class="text-sky-400 font-bold">[Client Web / SPA]</div>
+          <div class="text-[#6b7280] pl-3">│ (HTTP REST + Idempotency-Key)</div>
+          <div class="text-[#9ca3af] font-bold">▼</div>
+          <div class="text-amber-400 font-bold bg-[#18191d] p-1.5 rounded border border-amber-500/20">[API Gateway :8080] (Reverse Proxy + Auth Guard)</div>
+          <div class="text-[#6b7280] pl-3">├── POST /trips</div>
+          <div class="text-emerald-400 font-bold bg-[#18191d] p-1.5 rounded border border-emerald-500/20">
+            ► [Trip Service :8001] (TV1: SQLite WAL, Saga Coordinator, Outbox)
+          </div>
+          <div class="text-[#6b7280] pl-6">├── 1. Reserve Driver ──► <span class="text-sky-300 font-bold">[Driver Service :8002]</span> (Lock xe)</div>
+          <div class="text-[#6b7280] pl-6">├── 2. Hold Balance   ──► <span class="text-purple-300 font-bold">[Payment Service :8005]</span> (Giữ ví)</div>
+          <div class="text-[#6b7280] pl-6">└── 3. Confirm Trip   ──► <span class="text-emerald-300 font-bold">[Transactional Outbox]</span> (SQLite db.tx)</div>
+          <div class="text-[#6b7280] pl-3">└── SSE Stream ─────────► <span class="text-red-400 font-bold">[Notification Service :8006]</span> ──► Client</div>
+        </div>
+
+        <!-- Saga vs 2PC Feature Table -->
+        <div class="space-y-1.5 text-[11px]">
+          <div class="text-[10px] font-semibold text-[#9ca3af] uppercase tracking-wider">Đặc Tính Kỹ Thuật Hệ Phân Tán</div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.04]">
+              <div class="text-emerald-400 font-bold">Saga Pattern</div>
+              <div class="text-[10px] text-[#9ca3af] mt-1">Điều phối chuỗi nghiệp vụ không khoá cứng (Non-blocking). Bù trừ 2 chiều tự động.</div>
+            </div>
+            <div class="bg-[#121316] p-2 rounded-lg border border-white/[0.04]">
+              <div class="text-sky-400 font-bold">Transactional Outbox</div>
+              <div class="text-[10px] text-[#9ca3af] mt-1">Ghi cuốc xe và sự kiện vào cùng SQLite WAL transaction, triệt tiêu Dual-Write.</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Telemetry Log Stream Container -->
-    <div id="logs-container" class="flex-1 p-3 overflow-y-auto space-y-2 font-mono text-[11px]">
-      <div class="p-3 text-center text-xs text-[#6b7280]">Đang chờ sự kiện SSE từ hệ thống phân tán...</div>
+    <!-- VIEW 3: NHẬT KÝ SỰ KIỆN REALTIME (TELEMETRY LOGS) -->
+    <div id="drawer-view-logs" class="hidden flex-1 flex flex-col overflow-hidden">
+      <!-- Filter input -->
+      <div class="p-3 border-b border-white/[0.08] flex gap-2 bg-[#141519]">
+        <input id="log-filter-corr" type="text" placeholder="Lọc theo Correlation-ID hoặc Dịch vụ..." class="flex-1 bg-[#121316] text-xs text-[#f3f4f6] border border-white/[0.08] rounded-lg px-2.5 py-1.5 focus:border-amber-500 focus:outline-none font-mono" />
+        <button id="btn-clear-logs" class="bg-[#22242a] hover:bg-[#2a2c34] text-[#f3f4f6] text-xs px-2.5 py-1.5 rounded-lg border border-white/[0.08] transition">Xóa</button>
+      </div>
+
+      <!-- Telemetry Log Stream Container -->
+      <div id="logs-container" class="flex-1 p-3 overflow-y-auto space-y-2 font-mono text-[11px]">
+        <div class="p-3 text-center text-xs text-[#6b7280]">Đang chờ sự kiện SSE từ hệ thống phân tán...</div>
+      </div>
     </div>
   </aside>
 

@@ -2,6 +2,12 @@
 
 const crypto = require('node:crypto');
 
+// =========================================================================
+// [TV1] Saga Coordinator - Điều phối giao dịch phân tán (Saga Pattern)
+// Quản lý trạng thái giao dịch qua saga_instances, đảm bảo Idempotent Consumer,
+// xử lý Race Condition và chuỗi giao dịch bù trừ (Compensating Transactions)
+// =========================================================================
+
 /**
  * Trạng thái của một Saga Instance:
  * - STARTED: Khởi tạo khi tạo chuyến đi
@@ -28,9 +34,7 @@ class SagaCoordinator {
     this.outbox = outboxManager;
   }
 
-  /**
-   * Khởi tạo một phiên Saga mới khi cuốc xe vừa được tạo
-   */
+  // [TV1] Saga Step 1: Khởi tạo saga_instances (STARTED) và chèn trip.event.created vào outbox
   startSaga({ tripId, passengerId, correlationId, fare, pickup, dropoff }) {
     const sagaId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -42,6 +46,7 @@ class SagaCoordinator {
       dropoff,
     });
 
+    // Tạo bản ghi theo dõi tiến trình Saga với bước ban đầu là MATCHING
     this.db.run(
       `INSERT INTO saga_instances (saga_id, trip_id, current_step, status, correlation_id, payload, created_at, updated_at)
        VALUES (?, ?, 'MATCHING', ?, ?, ?, ?, ?);`,
@@ -54,7 +59,7 @@ class SagaCoordinator {
       now
     );
 
-    // Ghi nhận sự kiện trip.event.created vào Transactional Outbox
+    // Ghi nhận sự kiện trip.event.created vào bảng outbox_events trong cùng transaction
     this.outbox.insertEvent({
       aggregateType: 'TRIP',
       aggregateId: tripId,
@@ -72,9 +77,7 @@ class SagaCoordinator {
     return { sagaId, status: SAGA_STATUS.STARTED };
   }
 
-  /**
-   * Kiểm tra xem sự kiện đã từng được xử lý chưa (Idempotency)
-   */
+  // [TV1] Idempotent Consumer: Kiểm tra bảng processed_events chống xử lý trùng lặp từ Broker
   isEventProcessed(eventId) {
     if (!eventId) return false;
     const row = this.db.get('SELECT event_id FROM processed_events WHERE event_id = ?;', eventId);
@@ -96,10 +99,7 @@ class SagaCoordinator {
     );
   }
 
-  /**
-   * Xử lý sự kiện: trip.event.driver_matched
-   * Matching Service đã lock tài xế thành công -> Trip chuyển sang DRIVER_ASSIGNED và yêu cầu giữ tiền
-   */
+  // [TV1] Saga Step 2: Ghép tài xế thành công -> DRIVER_ASSIGNED & phát payment.event.hold_requested
   handleDriverMatched({
     eventId,
     tripId,
@@ -187,7 +187,7 @@ class SagaCoordinator {
         reservationExpiresAt,
         now,
         tripId
-      );
+      ); // Gán tài xế cho cuốc xe
 
       this.db.run(
         `UPDATE saga_instances 
@@ -196,8 +196,9 @@ class SagaCoordinator {
         SAGA_STATUS.HOLDING_PAYMENT,
         now,
         tripId
-      );
+      ); // Chuyển tiến trình Saga sang bước giữ tiền
 
+      // Phát sự kiện yêu cầu Payment Service tạm giữ tiền ví của hành khách
       this.outbox.insertEvent({
         aggregateType: 'TRIP',
         aggregateId: tripId,
@@ -213,7 +214,7 @@ class SagaCoordinator {
         correlationId: correlationId || saga.correlation_id,
       });
 
-      this.markEventProcessed(eventId, 'trip.event.driver_matched');
+      this.markEventProcessed(eventId, 'trip.event.driver_matched'); // Đánh dấu đã xử lý xong sự kiện matching
 
       return {
         action: 'ADVANCED_TO_HOLDING_PAYMENT',
@@ -225,10 +226,7 @@ class SagaCoordinator {
     });
   }
 
-  /**
-   * Xử lý sự kiện: payment.event.hold_success
-   * Tạm giữ tiền thành công -> Chuyến đi chuyển sang CONFIRMED (Happy path)
-   */
+  // [TV1] Saga Step 3: Tạm giữ tiền thành công -> CONFIRMED (kèm bù trừ nếu chuyến đã bị huỷ trước)
   handlePaymentHoldSuccess({ eventId, tripId, correlationId }) {
     return this.db.tx(() => {
       if (this.isEventProcessed(eventId)) {
@@ -311,12 +309,7 @@ class SagaCoordinator {
     });
   }
 
-  /**
-   * Xử lý sự kiện: payment.event.hold_failed
-   * KÍCH HOẠT SAGA BÙ TRỪ (COMPENSATING ACTION):
-   * 1. Huỷ cuốc xe: CANCELLED (Payment Failed)
-   * 2. Phát lệnh bù trừ: trip.event.release_driver để giải phóng tài xế về AVAILABLE
-   */
+  // [TV1] Saga Bù trừ: Giữ tiền thất bại -> CANCELLED và phát trip.event.release_driver nhả tài xế
   handlePaymentHoldFailed({ eventId, tripId, driverId, reason, correlationId }) {
     return this.db.tx(() => {
       if (this.isEventProcessed(eventId)) {
@@ -348,6 +341,7 @@ class SagaCoordinator {
       const now = new Date().toISOString();
       const corrId = correlationId || saga.correlation_id;
 
+      // Huỷ cuốc xe và ghi nhận lý do giữ tiền thất bại
       this.db.run(
         `UPDATE trips 
          SET status = 'CANCELLED', cancellation_reason = ?, updated_at = ? 
@@ -357,6 +351,7 @@ class SagaCoordinator {
         tripId
       );
 
+      // Cập nhật trạng thái Saga sang COMPENSATED (đã hoàn tất bù trừ)
       this.db.run(
         `UPDATE saga_instances 
          SET status = ?, current_step = 'COMPENSATION_RELEASE_DRIVER', error_reason = ?, updated_at = ? 
@@ -367,6 +362,7 @@ class SagaCoordinator {
         tripId
       );
 
+      // Giao dịch bù trừ: Bắn sự kiện outbox giải phóng tài xế quay về trạng thái AVAILABLE
       if (assignedDriverId) {
         this.outbox.insertEvent({
           aggregateType: 'TRIP',
@@ -382,7 +378,7 @@ class SagaCoordinator {
         });
       }
 
-      this.markEventProcessed(eventId, 'payment.event.hold_failed');
+      this.markEventProcessed(eventId, 'payment.event.hold_failed'); // Đánh dấu sự kiện đã xử lý tránh trùng lặp
 
       return {
         action: 'COMPENSATED',
@@ -445,10 +441,7 @@ class SagaCoordinator {
     });
   }
 
-  /**
-   * Xử lý xác nhận hoàn tiền từ Payment Service: payment.event.refund_success hoặc payment.event.refunded
-   * Saga chuyển từ COMPENSATING sang COMPENSATED khi việc hoàn tiền đã được participant xác nhận.
-   */
+  // [TV1] Saga Bù trừ: Xác nhận hoàn tiền thành công -> cập nhật saga_instances sang COMPENSATED
   handlePaymentRefundSuccess({ eventId, tripId, correlationId }) {
     return this.db.tx(() => {
       if (this.isEventProcessed(eventId)) {

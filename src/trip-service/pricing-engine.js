@@ -1,5 +1,11 @@
 'use strict';
 
+// =========================================================================
+// [TV1] Thuật toán Định giá động (Dynamic Pricing Engine)
+// - calculateSurgeMultiplier: Tính hệ số tăng giá theo tỷ lệ Cầu/Cung (chặn trần 2.5x)
+// - calculateFare: Tính cước từ khoảng cách Haversine và làm tròn 1.000 VNĐ
+// =========================================================================
+
 const { haversineDistanceKm } = require('./geo');
 const config = require('./config');
 
@@ -15,10 +21,7 @@ class PricingEngine {
     this.maxSurge = options.maxSurge || config.PRICING.MAX_SURGE;
   }
 
-  /**
-   * Tính hệ số tăng giá Surge Multiplier
-   * Surge = min(2.5, max(1.0, 1.0 + (demand / max(1, supply)) * 0.2))
-   */
+  // [TV1] Tính hệ số Surge Multiplier theo Cầu/Cung (chặn trần tối đa 2.5x)
   calculateSurgeMultiplier(demand, supply) {
     const validDemand = Number(demand);
     const validSupply = Number(supply);
@@ -34,31 +37,29 @@ class PricingEngine {
 
     // Tránh chia cho 0: max(1, supply)
     const effectiveSupply = Math.max(1, cleanSupply);
-    const ratio = cleanDemand / effectiveSupply;
+    const ratio = cleanDemand / effectiveSupply; // Tỷ lệ Cầu / Cung
 
-    const rawSurge = 1.0 + ratio * 0.2;
-    const clampedSurge = Math.min(this.maxSurge, Math.max(this.minSurge, rawSurge));
+    const rawSurge = 1.0 + ratio * 0.2; // Tăng 0.2 cho mỗi tỉ lệ thặng dư cầu
+    const clampedSurge = Math.min(this.maxSurge, Math.max(this.minSurge, rawSurge)); // Chặn trần 2.5x và sàn 1.0x
 
     return Math.round(clampedSurge * 100) / 100;
   }
 
-  /**
-   * Tính cước phí hoàn chỉnh cho cuốc xe
-   */
+  // [TV1] Tính cước phí hoàn chỉnh (BaseFare + Distance * Rate) * Surge và làm tròn 1.000 VNĐ
   calculateFare({ pickup, dropoff, demand = 0, supply = 1 }) {
     if (!pickup || !dropoff) {
       throw new Error('Toạ độ điểm đón và điểm đến không hợp lệ');
     }
 
-    const distanceKm = haversineDistanceKm(pickup, dropoff);
+    const distanceKm = haversineDistanceKm(pickup, dropoff); // Tính khoảng cách trắc địa Haversine
     if (distanceKm <= 0) {
       throw new Error('Điểm đón và điểm đến trùng nhau hoặc toạ độ không hợp lệ');
     }
 
-    const surgeMultiplier = this.calculateSurgeMultiplier(demand, supply);
-    const rawFare = (this.baseFare + distanceKm * this.perKmRate) * surgeMultiplier;
+    const surgeMultiplier = this.calculateSurgeMultiplier(demand, supply); // Lấy hệ số tăng giá
+    const rawFare = (this.baseFare + distanceKm * this.perKmRate) * surgeMultiplier; // Công thức cước chuẩn
 
-    // Làm tròn đến 1,000 VND gần nhất (thực tế tại Việt Nam)
+    // Làm tròn đến 1,000 VND gần nhất (phù hợp thực tế thanh toán)
     const roundedFare = Math.max(this.baseFare, Math.round(rawFare / 1000) * 1000);
 
     return {
