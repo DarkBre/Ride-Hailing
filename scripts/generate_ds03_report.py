@@ -257,9 +257,9 @@ def create_report_docx():
         ("Giảng viên hướng dẫn:", "Thầy Kim Ngọc Bách"),
         ("Nhóm lớp:", "E23HTTT01"),
         ("Nhóm bài tập:", "03 (DS03)"),
-        ("Sinh viên thực hiện:", "Nguyễn Hoàng Anh Đức (DarkBre) - Trưởng nhóm"),
-        ("", "Dương Quốc Hoàng"),
-        ("", "Minh Quang (Quangdz1125)")
+        ("Sinh viên thực hiện:", "Nguyễn Hoàng Anh Đức - B23DCVT097"),
+        ("", "Dương Quốc Hoàng - B23DCVT168"),
+        ("", "Hoàng Minh Quang - B23DCVT356")
     ]
     for row_idx, (label, val) in enumerate(info_data):
         row = tbl_info.rows[row_idx]
@@ -279,7 +279,7 @@ def create_report_docx():
         r1 = p1.add_run(val)
         r1.font.name = 'Times New Roman'
         r1.font.size = Pt(12)
-        r1.bold = True if ("Kim Ngọc Bách" in val or "Trưởng nhóm" in val) else False
+        r1.bold = True if ("Kim Ngọc Bách" in val or "B23DCVT" in val) else False
 
     p_bot = doc.add_paragraph()
     p_bot.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -292,37 +292,7 @@ def create_report_docx():
     doc.add_page_break()
 
     # ==========================================
-    # 2. LỜI CẢM ƠN
-    # ==========================================
-    add_h1("Lời cảm ơn")
-    add_p(
-        "Nhóm chúng em xin gửi lời tri ân sâu sắc nhất đến Quý Thầy/Cô tại Học viện Công nghệ Bưu chính Viễn thông nói chung "
-        "và Khoa Công nghệ Thông tin nói riêng, vì đã tận tình giảng dạy, truyền đạt những kiến thức nền tảng và phương pháp tư duy kỹ thuật "
-        "vô cùng quý báu trong suốt quá trình học tập tại Học viện."
-    )
-    add_p(
-        "Đặc biệt, nhóm xin bày tỏ lòng biết ơn chân thành đến thầy Kim Ngọc Bách – người đã trực tiếp truyền đạt kiến thức "
-        "môn học Hệ thống phân tán và tận tình định hướng, hướng dẫn nhóm trong suốt quá trình hoàn thiện bài tập lớn này. "
-        "Những bài giảng của Thầy về các bài toán cốt lõi trong hệ phân tán – từ kiến trúc hướng sự kiện (Event-Driven), "
-        "điều phối giao dịch phân tán không khóa chặn (Saga Pattern), các cơ chế kiểm soát tranh chấp đồng thời (CAS Optimistic Lock, Row-level Lock), "
-        "cho đến kỹ thuật đảm bảo độ tin cậy thông điệp (Transactional Outbox Pattern, Deduplication, Dead-Letter Queue) – chính là cơ sở lý thuyết "
-        "vững chắc để nhóm phân tích, thiết kế và hiện thực thành công hệ thống gọi xe công nghệ phân tán mô phỏng Grab/Uber (Đề tài DS03)."
-    )
-    add_p(
-        "Dù đã nỗ lực hết mình để xây dựng hệ thống đạt chất lượng cao nhất, do thời gian và kinh nghiệm thực tế còn hạn chế, "
-        "báo cáo chắc chắn khó tránh khỏi những thiếu sót. Chúng em rất mong nhận được những nhận xét, đóng góp quý báu từ Thầy/Cô "
-        "để đề tài được hoàn thiện hơn nữa."
-    )
-    add_p(
-        "Kính chúc Thầy cùng Quý Thầy/Cô luôn dồi dào sức khỏe, hạnh phúc và gặt hái được nhiều thành công trong sự nghiệp trồng người!"
-    )
-    add_p("Hà Nội, ngày 24 tháng 11 năm 2026", italic=True, align=WD_ALIGN_PARAGRAPH.RIGHT, space_after=12)
-    add_p("Tập thể sinh viên nhóm DS03", bold_prefix="Nhóm thực hiện: ", align=WD_ALIGN_PARAGRAPH.RIGHT)
-
-    doc.add_page_break()
-
-    # ==========================================
-    # 3. MỤC LỤC
+    # 2. MỤC LỤC
     # ==========================================
     p_toc_heading = doc.add_paragraph()
     p_toc_heading.paragraph_format.space_before = Pt(14)
@@ -812,14 +782,14 @@ def create_report_docx():
     set_table_borders(tbl_services)
     srv_data = [
         ("Dịch vụ", "Cổng", "Cơ sở dữ liệu", "Phân hệ sở hữu", "Trách nhiệm kỹ thuật cốt lõi"),
-        ("api-gateway", "8080", "Stateless", "TV3 (Minh Quang)", "Reverse Proxy, RBAC Guard, Rate Limiting, Correlation-ID Tracing"),
-        ("web-dashboard", "3000", "Static / In-memory", "TV3 (Minh Quang)", "Bản đồ Leaflet thời gian thực, điều khiển xe, bảng telemetry log SSE"),
-        ("identity-service", "8001", "SQLite WAL (user_db)", "TV1 (Anh Đức)", "Quản lý tài khoản, mã hóa Scrypt, cấp/thu hồi JWT, Token Blacklist"),
-        ("driver-service", "8002", "PostgreSQL 17 (driver_db)", "TV2 (Quốc Hoàng)", "Định vị GPS tài xế, Reservation Lock (HELD), CAS Optimistic Lock"),
-        ("trip-service", "8003", "SQLite WAL (trip_db)", "TV1 (Anh Đức)", "Vòng đời chuyến đi, Saga Orchestrator, Dynamic Pricing, Outbox"),
-        ("matching-service", "8004", "PostgreSQL 17 (match_db)", "TV2 (Quốc Hoàng)", "Lọc tài xế theo bán kính Haversine (R <= 5km), xếp hạng ứng viên"),
-        ("payment-service", "8005", "PostgreSQL 17 (payment_db)", "TV3 (Minh Quang)", "Quản lý ví, Tạm giữ cước (Hold), Quyết toán (Capture), Hoàn tiền"),
-        ("notification-service", "8006", "In-memory", "TV3 (Minh Quang)", "Tiêu thụ sự kiện RabbitMQ và phát Server-Sent Events (SSE) về Web")
+        ("api-gateway", "8080", "Stateless", "TV3 (Hoàng Minh Quang)", "Reverse Proxy, RBAC Guard, Rate Limiting, Correlation-ID Tracing"),
+        ("web-dashboard", "3000", "Static / In-memory", "TV3 (Hoàng Minh Quang)", "Bản đồ Leaflet thời gian thực, điều khiển xe, bảng telemetry log SSE"),
+        ("identity-service", "8001", "SQLite WAL (user_db)", "TV1 (Nguyễn Hoàng Anh Đức)", "Quản lý tài khoản, mã hóa Scrypt, cấp/thu hồi JWT, Token Blacklist"),
+        ("driver-service", "8002", "PostgreSQL 17 (driver_db)", "TV2 (Dương Quốc Hoàng)", "Định vị GPS tài xế, Reservation Lock (HELD), CAS Optimistic Lock"),
+        ("trip-service", "8003", "SQLite WAL (trip_db)", "TV1 (Nguyễn Hoàng Anh Đức)", "Vòng đời chuyến đi, Saga Orchestrator, Dynamic Pricing, Outbox"),
+        ("matching-service", "8004", "PostgreSQL 17 (match_db)", "TV2 (Dương Quốc Hoàng)", "Lọc tài xế theo bán kính Haversine (R <= 5km), xếp hạng ứng viên"),
+        ("payment-service", "8005", "PostgreSQL 17 (payment_db)", "TV3 (Hoàng Minh Quang)", "Quản lý ví, Tạm giữ cước (Hold), Quyết toán (Capture), Hoàn tiền"),
+        ("notification-service", "8006", "In-memory", "TV3 (Hoàng Minh Quang)", "Tiêu thụ sự kiện RabbitMQ và phát Server-Sent Events (SSE) về Web")
     ]
     for r_idx, row_vals in enumerate(srv_data):
         row = tbl_services.rows[r_idx]
@@ -1203,9 +1173,9 @@ def create_report_docx():
     set_table_borders(tbl_contrib)
     contrib_data = [
         ("STT", "Thành viên thực hiện", "Tỷ lệ đóng góp (%)", "Phân hệ / Dịch vụ phụ trách chính", "Đóng góp kỹ thuật cốt lõi & Báo cáo"),
-        ("1", "Nguyễn Hoàng Anh Đức (DarkBre)\n[Trưởng nhóm]", "40%", "• Identity Service (:8001)\n• Trip Booking Service (:8003)\n• Saga Coordinator & Dynamic Pricing", "• Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.\n• Thuật toán định giá động Dynamic Pricing (Haversine + Surge).\n• Bộ điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ (Refund / Release driver).\n• Bảo mật JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key.\n• Phụ trách Master Test Runner và tích hợp hệ thống.\n• Chịu trách nhiệm chính soạn thảo Báo cáo đồ án (Chương 1, 2, 3, 6)."),
-        ("2", "Dương Quốc Hoàng\n[Thành viên]", "30%", "• Driver Location Service (:8002)\n• Matching Service (:8004)\n• Driver PostgreSQL DB", "• Thiết kế cơ sở dữ liệu driver_db và match_db trên PostgreSQL 17.\n• Xây dựng giao thức giữ chỗ tài xế Driver Reservation Protocol (HELD, CONFIRMED, RELEASED).\n• Giải quyết tranh chấp đồng thời bằng CAS Optimistic Lock (version) kết hợp PostgreSQL FOR UPDATE SKIP LOCKED.\n• Thuật toán lọc tài xế theo bán kính không gian Haversine.\n• Tham gia viết Báo cáo Mục 3.2, Chương 4 và kịch bản demo."),
-        ("3", "Minh Quang (Quangdz1125)\n[Thành viên]", "30%", "• Payment Service (:8005)\n• Notification Service (:8006)\n• API Gateway (:8080)\n• Web Dashboard (:3000)\n• Hạ tầng Docker & RabbitMQ", "• Triển khai Payment Service với kiểm soát số dư ví, Row-Level Lock và Transactional Outbox Pattern.\n• Thiết lập RabbitMQ 4 Topology: Topic Exchange trip.exchange, Dead-Letter Queue trip.dlq, Bounded Retries.\n• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (X-Correlation-ID).\n• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).\n• Đóng gói Docker Compose 10 containers với healthcheck tự động.\n• Tham gia viết Báo cáo Chương 4, 5 và chuẩn bị slide thuyết trình.")
+        ("1", "Nguyễn Hoàng Anh Đức\nMSV: B23DCVT097\n[Trưởng nhóm]", "40%", "• Identity Service (:8001)\n• Trip Booking Service (:8003)\n• Saga Coordinator & Dynamic Pricing", "• Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.\n• Thuật toán định giá động Dynamic Pricing (Haversine + Surge).\n• Bộ điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ (Refund / Release driver).\n• Bảo mật JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key.\n• Phụ trách Master Test Runner và tích hợp hệ thống.\n• Chịu trách nhiệm chính soạn thảo Báo cáo đồ án (Chương 1, 2, 3, 6)."),
+        ("2", "Dương Quốc Hoàng\nMSV: B23DCVT168\n[Thành viên]", "30%", "• Driver Location Service (:8002)\n• Matching Service (:8004)\n• Driver PostgreSQL DB", "• Thiết kế cơ sở dữ liệu driver_db và match_db trên PostgreSQL 17.\n• Xây dựng giao thức giữ chỗ tài xế Driver Reservation Protocol (HELD, CONFIRMED, RELEASED).\n• Giải quyết tranh chấp đồng thời bằng CAS Optimistic Lock (version) kết hợp PostgreSQL FOR UPDATE SKIP LOCKED.\n• Thuật toán lọc tài xế theo bán kính không gian Haversine.\n• Tham gia viết Báo cáo Mục 3.2, Chương 4 và kịch bản demo."),
+        ("3", "Hoàng Minh Quang\nMSV: B23DCVT356\n[Thành viên]", "30%", "• Payment Service (:8005)\n• Notification Service (:8006)\n• API Gateway (:8080)\n• Web Dashboard (:3000)\n• Hạ tầng Docker & RabbitMQ", "• Triển khai Payment Service với kiểm soát số dư ví, Row-Level Lock và Transactional Outbox Pattern.\n• Thiết lập RabbitMQ 4 Topology: Topic Exchange trip.exchange, Dead-Letter Queue trip.dlq, Bounded Retries.\n• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (X-Correlation-ID).\n• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).\n• Đóng gói Docker Compose 10 containers với healthcheck tự động.\n• Tham gia viết Báo cáo Chương 4, 5 và chuẩn bị slide thuyết trình.")
     ]
     for r_idx, row_vals in enumerate(contrib_data):
         row = tbl_contrib.rows[r_idx]

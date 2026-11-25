@@ -11,22 +11,10 @@
 - **Nhóm lớp:** E23HTTT01
 - **Nhóm bài tập:** 03 (DS03)
 - **Sinh viên thực hiện:**
-  1. **Nguyễn Hoàng Anh Đức (DarkBre) - Trưởng nhóm**
-  2. **Dương Quốc Hoàng**
-  3. **Minh Quang (Quangdz1125)**
+  1. **Nguyễn Hoàng Anh Đức - B23DCVT097** (Trưởng nhóm)
+  2. **Dương Quốc Hoàng - B23DCVT168**
+  3. **Hoàng Minh Quang - B23DCVT356**
 - **Địa điểm & Năm:** Hà Nội - 2026
-
----
-
-## Lời cảm ơn
-
-Nhóm chúng em xin gửi lời tri ân sâu sắc nhất đến Quý Thầy/Cô tại Học viện Công nghệ Bưu chính Viễn thông nói chung và Khoa Công nghệ Thông tin nói riêng, vì đã tận tình giảng dạy, trang bị cho chúng em những nền tảng lý thuyết và tư duy kỹ thuật vô cùng quý báu trong suốt quá trình học tập tại Học viện.
-
-Đặc biệt, nhóm xin bày tỏ lòng biết ơn chân thành đến thầy **Kim Ngọc Bách** – người đã trực tiếp truyền đạt kiến thức môn học Hệ thống phân tán và tận tâm định hướng, hướng dẫn nhóm trong suốt quá trình hoàn thiện bài tập lớn này. Những bài giảng của Thầy về các bài toán cốt lõi trong hệ phân tán – từ kiến trúc hướng sự kiện (Event-Driven), điều phối giao dịch phân tán không khóa chặn (Saga Pattern), các cơ chế kiểm soát tranh chấp đồng thời (CAS Optimistic Lock, Row-level Lock), cho đến kỹ thuật đảm bảo độ tin cậy thông điệp (Transactional Outbox Pattern, Deduplication, Dead-Letter Queue) – chính là cơ sở lý thuyết vững chắc để nhóm phân tích, thiết kế và hiện thực thành công hệ thống gọi xe công nghệ phân tán mô phỏng Grab/Uber (Đề tài DS03).
-
-Dù đã nỗ lực hết mình để xây dựng hệ thống đạt chất lượng cao nhất, do thời gian và kinh nghiệm thực tế còn hạn chế, báo cáo chắc chắn khó tránh khỏi những thiếu sót. Chúng em rất mong nhận được những nhận xét, đóng góp quý báu từ Thầy/Cô để đề tài được hoàn thiện hơn nữa.
-
-*Kính chúc Thầy cùng Quý Thầy/Cô luôn dồi dào sức khỏe, hạnh phúc và gặt hái được nhiều thành công trong sự nghiệp giảng dạy!*
 
 ---
 
@@ -299,9 +287,9 @@ Hệ thống hoàn thành xuất sắc 100% các tiêu chí học phần: kiến
 
 | STT | Thành viên thực hiện | Tỷ lệ đóng góp (%) | Phân hệ / Dịch vụ phụ trách chính | Đóng góp kỹ thuật cốt lõi & Báo cáo |
 | :---: | :--- | :---: | :--- | :--- |
-| **1** | **Nguyễn Hoàng Anh Đức (DarkBre)**<br>*(Trưởng nhóm)* | **40%** | • `Identity Service` (:8001)<br>• `Trip Booking Service` (:8003)<br>• Saga Coordinator & Dynamic Pricing | • Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.<br>• Thuật toán định giá động Dynamic Pricing Engine (Haversine GPS + Surge Multiplier).<br>• Điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ 2 chiều (Refund / Release driver).<br>• Bảo mật xác thực JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key.<br>• Phụ trách Master Test Runner và tích hợp toàn hệ thống.<br>• Chịu trách nhiệm chính soạn thảo Báo cáo đồ án (Chương 1, 2, 3, 6). |
-| **2** | **Dương Quốc Hoàng**<br>*(Thành viên)* | **30%** | • `Driver Location Service` (:8002)<br>• `Matching Service` (:8004)<br>• Driver PostgreSQL Database | • Xây dựng cơ sở dữ liệu `driver_db` và `match_db` trên PostgreSQL 17.<br>• Giao thức đặt trước tài xế Driver Reservation Protocol (`HELD`, `CONFIRMED`, `RELEASED`, `EXPIRED`).<br>• Kiểm soát tranh chấp đồng thời bằng CAS Optimistic Lock (`version`) + `FOR UPDATE SKIP LOCKED`.<br>• Thuật toán định vị và lọc tài xế theo bán kính không gian Haversine Geospatial Filter.<br>• Tham gia viết Báo cáo Mục 3.2, Chương 4 và kịch bản demo. |
-| **3** | **Minh Quang (Quangdz1125)**<br>*(Thành viên)* | **30%** | • `Payment Service` (:8005)<br>• `Notification Service` (:8006)<br>• `API Gateway` (:8080)<br>• `Web Dashboard` (:3000)<br>• Hạ tầng Docker & RabbitMQ | • Triển khai Payment Service với quản lý số dư ví, Row-Level Lock và Transactional Outbox Pattern.<br>• Thiết lập RabbitMQ 4 Topology: Topic Exchange `trip.exchange`, Dead-Letter Queue `trip.dlq`, Bounded Retries.<br>• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (`X-Correlation-ID`).<br>• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).<br>• Đóng gói Docker Compose 10 containers với healthcheck tự động.<br>• Tham gia viết Báo cáo Chương 4, 5 và chuẩn bị slide thuyết trình. |
+| **1** | **Nguyễn Hoàng Anh Đức - B23DCVT097**<br>*(Trưởng nhóm)* | **40%** | • `Identity Service` (:8001)<br>• `Trip Booking Service` (:8003)<br>• Saga Coordinator & Dynamic Pricing | • Thiết kế kiến trúc phân tán tổng thể, cơ sở dữ liệu SQLite WAL.<br>• Thuật toán định giá động Dynamic Pricing Engine (Haversine GPS + Surge Multiplier).<br>• Điều phối giao dịch phân tán Saga Coordinator & Vòng đời bù trừ 2 chiều (Refund / Release driver).<br>• Bảo mật xác thực JWT HS256, Scrypt hashing, Persistent Token Blacklist, Idempotency-Key.<br>• Phụ trách Master Test Runner và tích hợp toàn hệ thống.<br>• Chịu trách nhiệm chính soạn thảo Báo cáo đồ án (Chương 1, 2, 3, 6). |
+| **2** | **Dương Quốc Hoàng - B23DCVT168**<br>*(Thành viên)* | **30%** | • `Driver Location Service` (:8002)<br>• `Matching Service` (:8004)<br>• Driver PostgreSQL Database | • Xây dựng cơ sở dữ liệu `driver_db` và `match_db` trên PostgreSQL 17.<br>• Giao thức đặt trước tài xế Driver Reservation Protocol (`HELD`, `CONFIRMED`, `RELEASED`, `EXPIRED`).<br>• Kiểm soát tranh chấp đồng thời bằng CAS Optimistic Lock (`version`) + `FOR UPDATE SKIP LOCKED`.<br>• Thuật toán định vị và lọc tài xế theo bán kính không gian Haversine Geospatial Filter.<br>• Tham gia viết Báo cáo Mục 3.2, Chương 4 và kịch bản demo. |
+| **3** | **Hoàng Minh Quang - B23DCVT356**<br>*(Thành viên)* | **30%** | • `Payment Service` (:8005)<br>• `Notification Service` (:8006)<br>• `API Gateway` (:8080)<br>• `Web Dashboard` (:3000)<br>• Hạ tầng Docker & RabbitMQ | • Triển khai Payment Service với quản lý số dư ví, Row-Level Lock và Transactional Outbox Pattern.<br>• Thiết lập RabbitMQ 4 Topology: Topic Exchange `trip.exchange`, Dead-Letter Queue `trip.dlq`, Bounded Retries.<br>• Xây dựng API Gateway phân quyền RBAC, CORS, Distributed Tracing (`X-Correlation-ID`).<br>• Phát triển Web Dashboard mô phỏng bản đồ Leaflet thời gian thực và Server-Sent Events (SSE).<br>• Đóng gói Docker Compose 10 containers với healthcheck tự động.<br>• Tham gia viết Báo cáo Chương 4, 5 và chuẩn bị slide thuyết trình. |
 
 ---
 
